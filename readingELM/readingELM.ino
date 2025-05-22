@@ -69,72 +69,91 @@ void loop() {
   // Solicita e lê Carga do Motor (PID 04)
   SerialBT.print("01 04\r");
   String resp04 = readELMResponse();
-  Serial.printf("Resposta Carga do Motor: %s\n", resp04.c_str());
+  float conv04 = strtoul(resp04.substring(4).c_str(), NULL, 16) * 100.0 / 255.0; // Variável pronta para uso
+  Serial.printf("Carga do Motor: %.1f %%\n", conv04);
+
 
   // Solicita e lê Temperatura do Líquido de Arrefecimento (PID 05)
   SerialBT.print("01 05\r");
   String resp05 = readELMResponse();
-  Serial.printf("Resposta Temperatura: %s\n", resp05.c_str());
+  float conv05 = strtoul(resp05.substring(4).c_str(), NULL, 16) - 40.0; // Fórmula: A - 40
+  Serial.printf("Temperatura: %.1f °C\n", conv05);
 
   // Solicita e lê Short Term Fuel Trim (PID 06)
   SerialBT.print("01 06\r");
   String resp06 = readELMResponse();
-  Serial.printf("Resposta Short Fuel Trim: %s\n", resp06.c_str());
+  float conv06 = (strtoul(resp06.substring(4).c_str(), NULL, 16) * 100.0 / 128.0) - 100; // Fórmula: (A*100/128)-100
+  Serial.printf("Short FT: %.1f %%\n", conv06);
 
   // Solicita e lê Long Term Fuel Trim (PID 07)
   SerialBT.print("01 07\r");
   String resp07 = readELMResponse();
-  Serial.printf("Resposta Long Fuel Trim: %s\n", resp07.c_str());
+  float conv07 = (strtoul(resp07.substring(4).c_str(), NULL, 16) * 100.0 / 128.0) - 100; // Fórmula: (A*100/128)-100
+  Serial.printf("Long FT: %.1f %%\n", conv07); // Ex: "-2.3 %" ou "+7.8 %"
 
   // Solicita e lê Fuel Pressure (PID 0A)
   SerialBT.print("01 0A\r");
   String resp0A = readELMResponse();
-  Serial.printf("Resposta Fuel Pressure: %s\n", resp0A.c_str());
+  float conv0A = strtoul(resp0A.substring(4).c_str(), NULL, 16) * 3; // kPa
+  Serial.printf("Fuel Pressure: %.1f kPa\n", conv0A);
 
-  // Solicita e lê Intake Manifold Absolute Pressure (PID 0B)
+  // Solicita e lê Pressão do Coletor (PID 0B)
   SerialBT.print("01 0B\r");
   String resp0B = readELMResponse();
-  Serial.printf("Resposta Intake Manifold Absolute Pressure: %s\n", resp0B.c_str());
+  float conv0B = strtoul(resp0B.substring(4).c_str(), NULL, 16); // kPa
+  Serial.printf("Pressão Coletor: %.1f kPa\n", conv0B);
 
   // Solicita e lê RPM (PID 0C)
   SerialBT.print("01 0C\r");
   String resp0C = readELMResponse();
-  Serial.printf("Resposta RPM: %s\n", resp0C.c_str());
+  float conv0C = strtoul(resp0C.substring(4).c_str(), NULL, 16) / 4.0; // Fórmula: (A*256+B)/4
+  Serial.printf("RPM: %.0f\n", conv0C);
 
   // Solicita e lê Velocidade (PID 0D)
   SerialBT.print("01 0D\r");
   String resp0D = readELMResponse();
-  Serial.printf("Resposta Velocidade: %s\n", resp0D.c_str());
+  int conv0D = strtoul(resp0D.substring(4).c_str(), NULL, 16); // km/h (valor direto)
+  Serial.printf("Velocidade: %d km/h\n", conv0D);
 
   // Solicita e lê Intake Air Temperature (PID 0F)
   SerialBT.print("01 0F\r");
   String resp0F = readELMResponse();
-  Serial.printf("Resposta Intake Air Temperature: %s\n", resp0F.c_str());
+  float conv0F = strtoul(resp0F.substring(4).c_str(), NULL, 16) - 40; // Fórmula: A - 40
+  Serial.printf("IAT: %.1f °C\n", conv0F);
 
   // Solicita e lê Mass Air Flow (PID 10)
   SerialBT.print("01 10\r");
   String resp10 = readELMResponse();
-  Serial.printf("Resposta Mass Air Flow: %s\n", resp10.c_str());
+  float conv10 = strtoul(resp10.substring(4).c_str(), NULL, 16) / 100.0; // Fórmula: (A*256+B)/100
+  Serial.printf("MAF: %.2f g/s\n", conv10);
 
-  // Solicita e lê Throttle position (PID 11)
+  // Throttle Position (PID 11)
   SerialBT.print("01 11\r");
   String resp11 = readELMResponse();
-  Serial.printf("Resposta Throttle position: %s\n", resp11.c_str());
+  float conv11 = strtoul(resp11.substring(4).c_str(), NULL, 16) * 100.0 / 255.0;
+  Serial.printf("Throttle: %.1f %%\n", conv11);
 
-  // Solicita e lê Oxygen 1 (PID 14)
+  // Oxygen Sensor 1 (PID 14)
   SerialBT.print("01 14\r");
   String resp14 = readELMResponse();
-  Serial.printf("Resposta Oxygen 1: %s\n", resp14.c_str());
+  unsigned int oxygen1 = strtoul(resp14.substring(4).c_str(), NULL, 16);
+  float conv14a = (oxygen1 >> 8) * 0.005;
+  float conv14b = ((oxygen1 & 0xFF) * 100.0 / 128.0) - 100;
+  Serial.printf("O2 Sensor 1: %.3f V, %.1f %%\n", conv14a, conv14b);
 
-  // Solicita e lê Oxygen 2 (PID 15)
+  // Oxygen Sensor 2 (PID 15)
   SerialBT.print("01 15\r");
   String resp15 = readELMResponse();
-  Serial.printf("Resposta Oxygen 2: %s\n", resp15.c_str());
+  unsigned int oxygen2 = strtoul(resp15.substring(4).c_str(), NULL, 16);
+  float conv15a = (oxygen2 >> 8) * 0.005;
+  float conv15b = ((oxygen2 & 0xFF) * 100.0 / 128.0) - 100;
+  Serial.printf("O2 Sensor 2: %.3f V, %.1f %%\n", conv15a, conv15b);
 
-  // Solicita e lê ECU Voltage (PID 42)
+  // ECU Voltage (PID 42)
   SerialBT.print("01 42\r");
   String resp42 = readELMResponse();
-  Serial.printf("Resposta ECU Votage: %s\n", resp42.c_str());
+  float conv42 = strtoul(resp42.substring(4).c_str(), NULL, 16) / 1000.0;
+  Serial.printf("ECU Voltage: %.2f V\n", conv42);
 
 
 

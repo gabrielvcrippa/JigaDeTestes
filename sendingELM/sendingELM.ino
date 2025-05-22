@@ -5,6 +5,24 @@ struct can_frame canMsg;
 //MCP2515 mcp2515(5); // CS no ESP32S
 MCP2515 mcp2515(10); // Arduino NANO
 
+//Dados enviados
+float engLoad = 50; // [%] Carga do motor  - 0 a 100 
+float EngCoolTemp = 125; // [°C] Temperatura do líquido de arrefecimento - -40 a 215
+float STFT = -10; // [%] Ajuste de curto prazo de Combustível - -100 a 99,2
+float LTFT = -15; // [%] Ajuste de longo prazo de Combustível - -100 a 99,2
+float FuelPressure = 102; // [kPa] Pressão de combustível - 0 a 765
+float IntManifAbsPres = 40; // [kPa] Intake Manifold Absolute Pressure - 0 a 255
+float rpm = 3000; // [RPM] RPM Motor - 0 a 16.383,75
+float VehiSpeed = 60; // [km/h] Velocidade - 0 a 255
+float IntAirTemp = 25; // [°C] Temperatura do ar de admissão - -40 a 215
+float MAF = 10; // [g/s] Mass air flow - 0 a 655,35
+float ThrPos = 25; // [%] Throttle Position - 0 a 100
+float VOS1 = 0.75; // [V] Voltage Oxygem Sensor 1 - 0 a 1,275
+float STFT1 = 0; // [%] Short Term Fuel Trim Oxygem Sensor 1 - -100 a 99,2
+float VOS2 = 0.75; // [V] Voltage Oxygem Sensor 2 - 0 a 1.275
+float STFT2 = 0; // [%] Short Term Fuel Trim Oxygem Sensor 2 - -100 a 99,2
+float CMV = 12.6; // [V] Tensão da ECU - 0 a 65,535
+
 void setup() {
   Serial.begin(115200);
   SPI.begin();
@@ -37,7 +55,7 @@ void loop() {
             response.data[7] = 0x00;
             Serial.println("Respondido ao PID: 0x00 (PIDs 0x0C e 0x0D suportados)");
             break;
-          }
+        }
 
         case 0x20: { // PIDs suportados [0x29 - 0x40]
           response.data[0] = 0x06; // Número de bytes de dados a seguir
@@ -66,8 +84,7 @@ void loop() {
         }
 
         case 0x04: { // Calculated Engine Load -> A/2.55
-            // Simulando 50% de carga do motor
-            uint8_t raw = static_cast<uint8_t>(round(50.0 * 2.55)); // ≈128
+            uint8_t raw = static_cast<uint8_t>(round(engLoad * 2.55)); // ≈128
             response.data[0] = 0x03;      // Número de bytes de dados a seguir (1 byte de A mais dois bytes de cabeçalho)
             response.data[3] = raw;       // Byte A
             response.data[4] = 0x00;
@@ -76,12 +93,11 @@ void loop() {
             response.data[7] = 0x00;
             Serial.println("Respondido ao PID: 0x04 (Calculated Engine Load)");
             break;
-          }
+        }
 
         case 0x05: { // Temperatura do líquido de arrefecimento
-          uint8_t temp = 90; // Temperatura simulada em °C
           response.data[0] = 0x03; // Número de bytes de dados a seguir
-          response.data[3] = temp + 40; // Fórmula: A - 40 = temp
+          response.data[3] = EngCoolTemp + 40; // Fórmula: A - 40 = temp
           response.data[4] = 0x00;
           response.data[5] = 0x00;
           response.data[6] = 0x00;
@@ -91,8 +107,7 @@ void loop() {
         }
 
         case 0x06: { // Short Term Fuel Trim (STFT) — Bank 1 -> (A/1.28 - 100)
-          // Simulando 0% de ajuste de curto prazo
-          uint8_t raw = static_cast<uint8_t>(round((0 + 100) * 1.28)); // =128
+          uint8_t raw = static_cast<uint8_t>(round((STFT + 100) * 1.28)); // =128
           response.data[0] = 0x03;
           response.data[3] = raw;
           response.data[4] = 0x00;
@@ -104,8 +119,7 @@ void loop() {
         }
 
         case 0x07: { // Long Term Fuel Trim (LTFT) — Bank 1 -> (A/1.28 - 100)
-          // Simulando 0% de ajuste de longo prazo
-          uint8_t raw = static_cast<uint8_t>(round((0 + 100) * 1.28)); // =128
+          uint8_t raw = static_cast<uint8_t>(round((LTFT + 100) * 1.28)); // =128
           response.data[0] = 0x03;
           response.data[3] = raw;
           response.data[4] = 0x00;
@@ -117,8 +131,7 @@ void loop() {
         }
 
         case 0x0A: { // Fuel Pressure (gauge) -> 3 × A
-          // Simulando pressão de combustível de 102 kPa
-          uint8_t raw = 34; // 34*3 = 102 kPa
+          uint8_t raw = FuelPressure/3;
           response.data[0] = 0x03;
           response.data[3] = raw;
           response.data[4] = 0x00;
@@ -130,8 +143,7 @@ void loop() {
         }
 
         case 0x0B: { // Intake Manifold Absolute Pressure -> A
-          // Simulando pressão de 40 kPa
-          uint8_t raw = 40;
+          uint8_t raw = IntManifAbsPres;
           response.data[0] = 0x03;
           response.data[3] = raw;
           response.data[4] = 0x00;
@@ -142,8 +154,7 @@ void loop() {
           break;
         }
 
-        case 0x0C: { // RPM do motor
-          uint16_t rpm = 3000; // Valor de RPM simulado
+        case 0x0C: { // RPM do motor 3000
           uint16_t value = rpm * 4;
           response.data[0] = 0x04; // Número de bytes de dados a seguir
           response.data[3] = (value >> 8) & 0xFF;
@@ -156,9 +167,8 @@ void loop() {
         }
 
         case 0x0D: { // Velocidade do veículo
-          uint8_t speed = 60; // Velocidade simulada em km/h
           response.data[0] = 0x03; // Número de bytes de dados a seguir
-          response.data[3] = speed;
+          response.data[3] = VehiSpeed;
           response.data[4] = 0x00;
           response.data[5] = 0x00;
           response.data[6] = 0x00;
@@ -167,9 +177,8 @@ void loop() {
           break;
         }
 
-        case 0x0F: { // Intake Air Temperature -> A - 40
-          // Simulando 25 °C de temperatura do ar de admissão
-          uint8_t raw = 25 + 40; // =65
+        case 0x0F: { // Intake Air Temperature -> A - 40          
+          uint8_t raw = IntAirTemp + 40; // =65
           response.data[0] = 0x03;
           response.data[3] = raw;
           response.data[4] = 0x00;
@@ -181,8 +190,7 @@ void loop() {
         }
 
         case 0x10: { // Mass Air Flow (MAF) -> (256*A + B) / 100
-          // Simulando fluxo de 10 g/s
-          uint16_t maf_raw = 10 * 100;          // =1000
+          uint16_t maf_raw = MAF * 100;          // =1000
           uint8_t A = (maf_raw >> 8) & 0xFF;    // =3
           uint8_t B = maf_raw & 0xFF;           // =232
           response.data[0] = 0x04;              
@@ -196,8 +204,7 @@ void loop() {
         }
 
         case 0x11: { // Throttle Position -> A/2.55
-          // Simulando 25% de abertura
-          uint8_t raw = static_cast<uint8_t>(round(25.0 * 2.55)); // =64
+          uint8_t raw = static_cast<uint8_t>(round(ThrPos * 2.55)); // =64
           response.data[0] = 0x03;
           response.data[3] = raw;
           response.data[4] = 0x00;
@@ -209,9 +216,8 @@ void loop() {
         }
 
         case 0x14: { // Oxygen Sensor 1: Voltage (A/200) & STFT (B/1.28 - 100)
-          // Simulando 0.75 V e 0% de trim
-          uint8_t A = static_cast<uint8_t>(round(0.75 * 200)); // =150
-          uint8_t B = static_cast<uint8_t>(round((0 + 100) * 1.28)); // =128
+          uint8_t A = static_cast<uint8_t>(round(VOS1 * 200)); // =150
+          uint8_t B = static_cast<uint8_t>(round((STFT1 + 100) * 1.28)); // =128
           response.data[0] = 0x04;
           response.data[3] = A;  
           response.data[4] = B;
@@ -224,8 +230,8 @@ void loop() {
 
         case 0x15: { // Oxygen Sensor 2: Voltage (A/200) & STFT (B/1.28 - 100)
           // Mesmo valor que o sensor 1
-          uint8_t A = static_cast<uint8_t>(round(0.75 * 200)); // =150
-          uint8_t B = static_cast<uint8_t>(round((0 + 100) * 1.28)); // =128
+          uint8_t A = static_cast<uint8_t>(round(VOS2 * 200)); // =150
+          uint8_t B = static_cast<uint8_t>(round((STFT2 + 100) * 1.28)); // =128
           response.data[0] = 0x04;
           response.data[3] = A;
           response.data[4] = B;
@@ -237,8 +243,7 @@ void loop() {
         }
 
         case 0x42: { // Control Module Voltage -> (256*A + B) / 1000
-          // Simulando 12.6 V de tensão da ECU
-          uint16_t volt_raw = static_cast<uint16_t>(round(12.6 * 1000)); // =12600
+          uint16_t volt_raw = static_cast<uint16_t>(round(CMV * 1000)); // =12600
           uint8_t A = (volt_raw >> 8) & 0xFF;    // =49
           uint8_t B = volt_raw & 0xFF;           // =56
           response.data[0] = 0x04;

@@ -8,6 +8,7 @@ const char* elmPIN    = "1234";
 size_t      elmPINlen = strlen(elmPIN);
 
 //Dados enviados
+#define intervaloCapturaDado 250
 int dataIndex = 0;
 int dataError = 0;
 int totalError = 0;
@@ -117,7 +118,8 @@ void loop() {
 
   while (!menu) {
     if (Serial.available()) {
-      if (Serial.read() == '1') {
+      int read = Serial.read();
+      if (read == '1') {
         Serial.println("Iniciando teste automático");
         initLeitura(); // Necessário para não haver erro inicial de leitura
         ativaTrigger = true;
@@ -132,12 +134,19 @@ void loop() {
         }
         menu = true;
         ativaTrigger = false;
-      }
-      if (Serial.read() == '2'){ // Não entra nesse if, trocar por case?
-        Serial.println("Iniciando teste manual");
+      } else if (read == '2'){
+        Serial.println("===== Iniciando teste manual ======");
+        delay(1000);
         ativaTrigger = false;
-        for (int i = 0; i < 10; ++i) {
+        while (true) {
+          if (Serial.available() > 0) {
+            char read = Serial.read();
+            if (read == '0') {
+              break;
+              }
+            }
           DadosRecebidos dados = recebeDados(ativaTrigger);
+          Serial.println("=============================");
         }
         menu = true;
       }
@@ -301,7 +310,7 @@ DadosRecebidos recebeDados(bool ativaTrigger) {
   Serial.printf("ECU Voltage: %.2f V\n", dados.conv42);
 
   if (ativaTrigger){digitalWrite(trigPin, HIGH);}
-  delay(1000);
+  delay(intervaloCapturaDado);
   return dados;
 }
 

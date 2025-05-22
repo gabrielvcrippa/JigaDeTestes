@@ -1,4 +1,4 @@
-#include <SPI.h>
+  #include <SPI.h>
 #include <mcp2515.h>
 
 #define trigPin 5
@@ -8,12 +8,13 @@ struct can_frame canMsg;
 MCP2515 mcp2515(10); // Arduino NANO
 
 //Dados enviados
+#define intervaloCapturaDado 250 
 int dataIndex = 0;
 
-float engLoad[10] = {50, 90, 23, 75, 13, 46, 88, 5, 35, 68}; // [%] Carga do motor - 0 a 100 
+float engLoad[10] = {50, 90, 23, 75, 13, 46, 88, 44, 35, 68}; // [%] Carga do motor - 0 a 100 
 float EngCoolTemp[10] = {125, -20, 45, 13, 96, 32, 67, 103, 19, 75}; // [°C] Temperatura do líquido de arrefecimento - -40 a 215
-float STFT[10] = {-10, 5, -8, 12, -3, 9, -15, 3, -9, 5}; // [%] Ajuste de curto prazo de Combustível - -100 a 99,2
-float LTFT[10] = {-15, -2, 8, -13, 4, -9, 5, 60, 10, -4}; // [%] Ajuste de longo prazo de Combustível - -100 a 99,2
+float STFT[10] = {-10, 55, -80, 12, -40, 9, -15, 23, -9, 35}; // [%] Ajuste de curto prazo de Combustível - -100 a 99,2
+float LTFT[10] = {-15, -22, 8, -13, 4, -9, 5, 60, 10, -4}; // [%] Ajuste de longo prazo de Combustível - -100 a 99,2
 float FuelPressure[10] = {102, 235, 88, 345, 157, 298, 45, 188, 277, 66}; // [kPa] Pressão de combustível - 0 a 765
 float IntManifAbsPres[10] = {40, 87, 33, 125, 57, 98, 12, 77, 145, 24}; // [kPa] Intake Manifold Absolute Pressure - 0 a 255
 float rpm[10] = {3000, 1250, 8765, 3422, 987, 5433, 7654, 2346, 4322, 6543}; // [RPM] RPM Motor - 0 a 16.383,75
@@ -51,12 +52,12 @@ void loop() {
   //   dataIndex=0;
   //   }
   if (trigger){
-    if (dataIndex < 9){
+    if (dataIndex < 10){
       dataIndex++;
-      delay(1000);
+      delay(intervaloCapturaDado);
     } else{
       dataIndex = 0;
-      delay(1000);
+      delay(intervaloCapturaDado);
     }
   }
 

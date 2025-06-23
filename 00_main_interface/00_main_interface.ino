@@ -7,6 +7,7 @@
 #include "FS.h"
 #include "Free_Fonts.h"
 #include "BluetoothSerial.h"
+#include <vector>
 
 // --- OBJETOS GLOBAIS ---
 TFT_eSPI tft = TFT_eSPI();
@@ -49,7 +50,7 @@ BluetoothSerial SerialBT;
 #define intervaloCapturaDado 250
 
 // --- ESTRUTURAS E ESTADOS GLOBAIS ---
-enum ScreenState { TELA_BLUETOOTH, TELA_MENU_TESTES, TELA_TESTE_AUTO, TELA_TESTE_MANUAL };
+enum ScreenState { TELA_BLUETOOTH, TELA_MENU_TESTES, TELA_TESTE_AUTO, TELA_TESTE_MANUAL, TELA_RELATORIO };
 ScreenState estadoAtual = TELA_BLUETOOTH;
 
 struct DispositivoBluetooth { String nome; BTAddress* pAddress; };
@@ -57,6 +58,12 @@ struct DadosRecebidos {
   float conv04, conv05, conv06, conv07, conv0A, conv0B, conv0C, conv0D, conv0F,
         conv10, conv11, conv14a, conv14b, conv15a, conv15b, conv42;
 };
+struct ErroDetalhado {
+  String nomePid;
+  float valorMedido;
+  float valorGabarito;
+};
+std::vector<ErroDetalhado> errosDetalhados;
 
 bool btConectado = false;
 bool testIsPaused = false;
@@ -93,9 +100,9 @@ int totalPaginas = 0;
 const int pinAdc1 = 34; const int pinAdc2 = 35; const int pinAdc3 = 32;
 const int pinAdc4 = 33; const int pinAdc5 = 25; const int pinAdc6 = 26;
 const char* pidNames[NUM_PIDS] = {
-  "Carga Motor", "Temp. Liq.", "Short Term F.T.", "Long Term F.T.", "Pres. Combus.",
+  "Carga Motor", "Temp. Liq.", "STFT", "LTFT", "Press. Comb.",
   "Pres. Coletor", "RPM", "Velocidade", "Temp. Ar Adm.", "Fluxo de Ar",
-  "Pos. Borbol.", "Tensao O2(B1S1)", "Ajuste O2(B1S1)", "Tensao O2(B1S2)", "Ajuste O2(B1S2)"
+  "Pos. Borbol.", "Tensao1 O2", "Ajuste1 O2", "Tensao2 O2", "Ajuste2 O2"
 };
 
 // ===================================================================================
@@ -111,6 +118,7 @@ void desenhaTabelasBase();
 void atualizaValoresTabelas(const DadosRecebidos& dados, const float erros[]);
 void mostrarTelaTesteAuto();
 void mostrarTelaTesteManual();
+void mostrarTelaRelatorio();
 
 // ===================================================================================
 // SEÇÃO DE LÓGICA E CONTROLE
@@ -128,6 +136,7 @@ void handleTouch_TelaBluetooth(uint16_t x, uint16_t y);
 void handleTouch_TelaMenuTestes(uint16_t x, uint16_t y);
 void handleTouch_TelaTesteAuto(uint16_t x, uint16_t y);
 void handleTouch_TelasDeTeste(uint16_t x, uint16_t y);
+void handleTouch_TelaRelatorio(uint16_t x, uint16_t y);
 void iniciarTesteAutomatico();
 void iniciarTesteManual();
 void sincronizarIndices();
@@ -236,47 +245,67 @@ void desenhaMenuBarTeste() {
 
 void desenhaTabelasBase() {
   int tableWidth = SCREEN_WIDTH / 3;
-  tft.setTextDatum(TC_DATUM);
-  tft.setFreeFont(FSSB9);
+
   for (int i = 0; i < 3; i++) {
     int tableX = i * tableWidth;
+    int pidColumnWidth = tableWidth * 0.59; 
+
+    // ---- Título da coluna PID ----
+    tft.setFreeFont(FSS9); 
+    tft.setTextDatum(TL_DATUM); 
     tft.setTextColor(TFT_YELLOW);
-    tft.drawString("PID", tableX + tableWidth / 4, TABLE_Y + 5);
-    tft.drawString("VALOR", tableX + (tableWidth / 4) * 3, TABLE_Y + 5);
+    tft.drawString("PID", tableX + 5, TABLE_Y + 5);
+
+    // ---- Desenha as linhas da grade ----
     tft.setTextColor(TFT_WHITE);
-    tft.setTextDatum(TL_DATUM);
     for (int j = 0; j < PIDS_PER_TABLE; j++) {
       int rowY = TABLE_Y + 30 + (j * TABLE_ROW_HEIGHT);
-      int pidIndex = i * PIDS_PER_TABLE + j;
-      if (pidIndex < NUM_PIDS) {
-        tft.drawString(pidNames[pidIndex], tableX + 5, rowY);
-        tft.drawFastHLine(tableX, rowY + TABLE_ROW_HEIGHT - 5, tableWidth - 2, CINZA_CLARO);
-      }
+      tft.drawFastHLine(tableX, rowY + TABLE_ROW_HEIGHT - 5, tableWidth - 2, CINZA_CLARO);
     }
-    tft.drawFastVLine(tableX + tableWidth/2 -2, TABLE_Y + 28, 250, CINZA_CLARO);
+
+    // Linha vertical separadora
+    tft.drawFastVLine(tableX + pidColumnWidth, TABLE_Y + 28, 250, CINZA_CLARO);
   }
 }
 
 void atualizaValoresTabelas(const DadosRecebidos& dados, const float erros[]) {
   int tableWidth = SCREEN_WIDTH / 3;
-  tft.setTextDatum(TR_DATUM);
-  tft.setFreeFont(FSS9);
+  
   float valoresLidos[] = { dados.conv04, dados.conv05, dados.conv06, dados.conv07, dados.conv0A, dados.conv0B, dados.conv0C, dados.conv0D, dados.conv0F, dados.conv10, dados.conv11, dados.conv14a, dados.conv14b, dados.conv15a, dados.conv15b };
-  float valoresGabarito[] = { engLoad[dataIndex], EngCoolTemp[dataIndex], STFT[dataIndex], LTFT[dataIndex], FuelPressure[dataIndex], IntManifAbsPres[dataIndex], rpm[dataIndex], VehiSpeed[dataIndex], IntAirTemp[dataIndex], MAF[dataIndex], ThrPos[dataIndex], VOS1[dataIndex], STFT1[dataIndex], VOS2[dataIndex], STFT2[dataIndex] };
+
   for (int i = 0; i < 3; i++) {
     int tableX = i * tableWidth;
+    int pidColumnWidth = tableWidth * 0.59;
+
     for (int j = 0; j < PIDS_PER_TABLE; j++) {
       int rowY = TABLE_Y + 30 + (j * TABLE_ROW_HEIGHT);
       int pidIndex = i * PIDS_PER_TABLE + j;
       if (pidIndex < NUM_PIDS) {
-        tft.fillRect(tableX + tableWidth/2, rowY, tableWidth/2-2, TABLE_ROW_HEIGHT - 6, CINZA_ESCURO);
+        
+        // ---- 1. Limpa e Redesenha o Nome do PID ----
+        tft.setTextFont(2);
+        tft.setTextColor(TFT_WHITE);
+        tft.setTextDatum(TL_DATUM);
+        // Limpa a área do nome
+        tft.fillRect(tableX + 2, rowY, pidColumnWidth - 4, TABLE_ROW_HEIGHT - 6, CINZA_ESCURO);
+        // Redesenha o nome
+        tft.drawString(pidNames[pidIndex], tableX + 5, rowY + 12);
+        
+        // ---- 2. Limpa e Redesenha o Valor ----
+        tft.setTextDatum(TL_DATUM);
+        // Limpa a área do valor
+        tft.fillRect(tableX + pidColumnWidth + 2, rowY, (tableWidth - pidColumnWidth - 4), TABLE_ROW_HEIGHT - 6, CINZA_ESCURO);
+        // Define a cor
         uint16_t corValor = (erros[pidIndex] > 0.1) ? VERMELHO : VERDE;
         tft.setTextColor(corValor);
-        String valorStr = String(valoresLidos[pidIndex], 1) + "/" + String(valoresGabarito[pidIndex], 1);
-        tft.drawString(valorStr, tableX + tableWidth - 5, rowY);
+        // Redesenha o valor
+        String valorStr = String(valoresLidos[pidIndex], 1);
+        tft.drawString(valorStr, tableX + pidColumnWidth + 5, rowY + 12);
       }
     }
   }
+  
+  tft.setFreeFont(nullptr); 
 }
 
 void mostrarTelaTesteAuto() {
@@ -295,7 +324,6 @@ void mostrarTelaTesteManual() {
     tft.drawString("Verifique o Monitor Serial para os resultados.", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
     desenhaBotao(10, 10, 100, 40, "Voltar", CINZA_CLARO);
 }
-
 
 void touch_calibrate() {
   uint16_t calData[5];
@@ -397,6 +425,11 @@ void calculaErro(const DadosRecebidos& d) {
   float valoresGabarito[]={engLoad[dataIndex],EngCoolTemp[dataIndex],STFT[dataIndex],LTFT[dataIndex],FuelPressure[dataIndex],IntManifAbsPres[dataIndex],rpm[dataIndex],VehiSpeed[dataIndex],IntAirTemp[dataIndex],MAF[dataIndex],ThrPos[dataIndex],VOS1[dataIndex],STFT1[dataIndex],VOS2[dataIndex],STFT2[dataIndex],CMV[dataIndex]};
   float valoresLidos[]={d.conv04,d.conv05,d.conv06,d.conv07,d.conv0A,d.conv0B,d.conv0C,d.conv0D,d.conv0F,d.conv10,d.conv11,d.conv14a,d.conv14b,d.conv15a,d.conv15b,d.conv42};
   
+  // O nome do 16º PID (CMV) não está na lista pidNames, vamos adicioná-lo manualmente para o relatório
+  const char* pidNamesReport[16];
+  for(int i=0; i<15; i++) pidNamesReport[i] = pidNames[i];
+  pidNamesReport[15] = "Tensao Modulo";
+
   for(int i=0; i < 16; ++i){
     erro[i] = 0;
     if(abs(valoresGabarito[i]) > 0.01) { 
@@ -407,10 +440,15 @@ void calculaErro(const DadosRecebidos& d) {
     if(erro[i] > 0.1) {
       dataError++;
       totalError++;
+      // Salva os detalhes do erro encontrado
+      ErroDetalhado erroInfo;
+      erroInfo.nomePid = pidNamesReport[i];
+      erroInfo.valorMedido = valoresLidos[i];
+      erroInfo.valorGabarito = valoresGabarito[i];
+      errosDetalhados.push_back(erroInfo);
     }
   }
   Serial.printf("Passo %d - Erros neste passo: %d\n", dataIndex + 1, dataError);
-  // A linha de incremento foi REMOVIDA daqui.
 }
 
 void initLeitura() {
@@ -453,6 +491,56 @@ void finalizarTeste() {
     testIsPaused = false;
     estadoAtual = TELA_MENU_TESTES;
     mostrarTelaMenuTestes();
+}
+
+void mostrarTelaRelatorio() {
+  tft.fillScreen(CINZA_ESCURO);
+  tft.setFreeFont(FSSB9);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(LARANJA);
+  tft.drawString("Resultados do Teste Automatico", SCREEN_WIDTH / 2, 30);
+
+  tft.setTextColor(TFT_WHITE);
+  if (totalError == 0) {
+    tft.drawString("Teste concluido com um total de 0 erros!", SCREEN_WIDTH / 2, 80);
+  } else {
+    String msg = "Teste concluido! Erros: " + String(totalError);
+    tft.drawString(msg, SCREEN_WIDTH / 2, 80);
+
+    // Desenha o cabeçalho da tabela de erros
+    int yTabela = 120;
+    int xNome = 10;
+    int xMedido = 200;
+    int xEnviado = 330;
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(TFT_YELLOW);
+    tft.drawString("PID", xNome, yTabela);
+    tft.drawString("Valor Medido", xMedido, yTabela);
+    tft.drawString("Valor Enviado", xEnviado, yTabela);
+    tft.drawFastHLine(5, yTabela + 25, SCREEN_WIDTH - 10, CINZA_CLARO);
+
+    // Exibe cada erro na tabela
+    tft.setFreeFont(FSS9);
+    tft.setTextColor(TFT_WHITE);
+    int yItem = yTabela + 35;
+    for (const auto& erro : errosDetalhados) {
+      tft.drawString(erro.nomePid, xNome, yItem);
+      tft.drawString(String(erro.valorMedido, 1), xMedido, yItem);
+      tft.drawString(String(erro.valorGabarito, 1), xEnviado, yItem);
+      yItem += 20; // Próxima linha
+      if(yItem > SCREEN_HEIGHT - 50) break; // Evita transbordar a tela
+    }
+  }
+
+  // Botão para voltar ao menu
+  desenhaBotao(SCREEN_WIDTH - 110, SCREEN_HEIGHT - 45, 100, 40, "Voltar", AZUL);
+}
+
+void handleTouch_TelaRelatorio(uint16_t x, uint16_t y) {
+  // Verifica se o toque foi no botão "Voltar"
+  if ((x > SCREEN_WIDTH - 110) && (x < SCREEN_WIDTH - 10) && (y > SCREEN_HEIGHT - 45) && (y < SCREEN_HEIGHT - 5)) {
+    finalizarTeste(); // A função finalizarTeste já nos leva de volta ao menu e reseta as variáveis
+  }
 }
 
 void handleTouch_TelaBluetooth(uint16_t x, uint16_t y) {
@@ -509,6 +597,7 @@ void iniciarTesteAutomatico() {
     testIsPaused = false;
     dataIndex = 0;
     totalError = 0;
+    errosDetalhados.clear(); // Limpa o relatório de erros anterior
     
     digitalWrite(trigPin, LOW);
     delay(100);
@@ -531,30 +620,17 @@ void iniciarTesteAutomatico() {
         digitalWrite(trigPin, LOW);
         
         DadosRecebidos dados=recebeDados(true,true);
-        
-        // Calcula o erro para o índice ATUAL
         calculaErro(dados);
-        
-        // Mostra os resultados na tela (dados e gabarito do índice ATUAL)
         atualizaValoresTabelas(dados,erro);
         
-        // Agora, incrementa o índice para o PRÓXIMO passo
         if (++dataIndex >= 10) dataIndex = 0;
 
-        // Sinaliza para o Arduino avançar
         digitalWrite(trigPin, HIGH);
         delay(intervaloCapturaDado);
     }
     
-    tft.setTextDatum(CC_DATUM);
-    tft.setFreeFont(FSSB9);
-    tft.setTextColor(TFT_WHITE,CINZA_ESCURO);
-    String msgFinal="Teste Concluido! Erros: "+String(totalError);
-    tft.drawString(msgFinal,SCREEN_WIDTH/2,SCREEN_HEIGHT/2);
-    
-    uint16_t tx, ty;
-    while(!tft.getTouch(&tx, &ty)){}
-    finalizarTeste();
+    estadoAtual = TELA_RELATORIO;
+    mostrarTelaRelatorio();
 }
 
 void iniciarTesteManual() {
@@ -611,7 +687,8 @@ void loop() {
       case TELA_BLUETOOTH:    handleTouch_TelaBluetooth(tx, ty);   break;
       case TELA_MENU_TESTES:  handleTouch_TelaMenuTestes(tx, ty);  break;
       case TELA_TESTE_AUTO:   handleTouch_TelaTesteAuto(tx, ty);   break;
-      case TELA_TESTE_MANUAL: handleTouch_TelasDeTeste(tx, ty);    break; 
+      case TELA_TESTE_MANUAL: handleTouch_TelasDeTeste(tx, ty);    break;
+      case TELA_RELATORIO:    handleTouch_TelaRelatorio(tx, ty);   break;
     }
     while (tft.getTouch(&tx, &ty)) {}
   }

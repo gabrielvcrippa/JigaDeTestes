@@ -69,6 +69,9 @@ bool btConectado = false;
 bool testIsPaused = false;
 int dataIndex = 0;
 int totalError = 0;
+int paginaAtualRelatorio = 0;
+int itensPorPaginaRelatorio = 6;
+int totalPaginasRelatorio = 0;
 
 // Arrays de gabarito para o teste automático
 float engLoad[11]         = {50, 90, 23, 75, 13, 46, 88, 44, 35, 68, 0};
@@ -115,10 +118,13 @@ void mostrarTelaBluetooth(const char* msgErro = "");
 void mostrarTelaMenuTestes();
 void desenhaMenuBarTeste();
 void desenhaTabelasBase();
+void desenhaMenuBarRelatorio();
 void atualizaValoresTabelas(const DadosRecebidos& dados, const float erros[]);
 void mostrarTelaTesteAuto();
 void mostrarTelaTesteManual();
 void mostrarTelaRelatorio();
+void desenhaListaErros();
+void desenhaPaginacaoRelatorio();
 
 // ===================================================================================
 // SEÇÃO DE LÓGICA E CONTROLE
@@ -195,7 +201,7 @@ void mostrarTelaBluetooth(const char* msgErro) {
   tft.setFreeFont(FSSB9);
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(LARANJA, CINZA_ESCURO);
-  tft.drawString("Conecte ao dispositivo ELM", SCREEN_WIDTH / 2, MSG_Y);
+  tft.drawString("Conecte ao dispositivo OBD2", SCREEN_WIDTH / 2, MSG_Y);
   tft.drawRect(TABELA_X, TABELA_Y, TABELA_WIDTH, TABELA_HEIGHT, TFT_WHITE);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_YELLOW, CINZA_ESCURO);
@@ -204,9 +210,27 @@ void mostrarTelaBluetooth(const char* msgErro) {
   desenhaPaginacao();
   desenhaBotao(BOTOES_X, BTN_PROCURAR_Y, BOTOES_WIDTH, BTN_HEIGHT, "Procurar", VERDE);
   desenhaBotao(BOTOES_X, BTN_CONECTAR_Y, BOTOES_WIDTH, BTN_HEIGHT, "Conectar", AZUL);
+
+  // Limpa a área de mensagem de erro antiga para evitar sobreposição
+  tft.fillRect(BOTOES_X, MENSAGEM_ERRO_Y, BOTOES_WIDTH, 60, CINZA_ESCURO);
+
   if (strlen(msgErro) > 0) {
     tft.setTextColor(VERMELHO, CINZA_ESCURO);
-    tft.drawString(msgErro, BOTOES_X, MENSAGEM_ERRO_Y);
+    tft.setTextDatum(TL_DATUM); // Alinha o texto no topo e à esquerda
+
+    String erroStr(msgErro);
+    int newlineIndex = erroStr.indexOf('\n');
+
+    if (newlineIndex != -1) {
+      // Se encontrou quebra de linha
+      String linha1 = erroStr.substring(0, newlineIndex);
+      String linha2 = erroStr.substring(newlineIndex + 1);
+      tft.drawString(linha1, BOTOES_X, MENSAGEM_ERRO_Y);
+      tft.drawString(linha2, BOTOES_X, MENSAGEM_ERRO_Y + 25); // Posição Y da segunda linha
+    } else {
+      // Se não houver quebra de linha, exibe normalmente
+      tft.drawString(erroStr, BOTOES_X, MENSAGEM_ERRO_Y);
+    }
   }
 }
 
@@ -226,28 +250,22 @@ void mostrarTelaMenuTestes() {
 void desenhaMenuBarTeste() {
   tft.fillRect(0, 0, SCREEN_WIDTH, MENUBAR_HEIGHT, LARANJA);
   tft.fillTriangle(10, MENUBAR_HEIGHT / 2, 30, 10, 30, MENUBAR_HEIGHT - 10, TFT_BLACK);
-  uint16_t iconColor = TFT_BLACK;
-  int iconSize = MENUBAR_HEIGHT * 0.6;
-  int iconCenterX = SCREEN_WIDTH - 25;
-  int iconCenterY = MENUBAR_HEIGHT / 2;
-  if (testIsPaused) {
-    int playWidth = iconSize * 0.8;
-    int playHeight = iconSize;
-    tft.fillTriangle(iconCenterX - playWidth / 2, iconCenterY - playHeight / 2, iconCenterX + playWidth / 2, iconCenterY, iconCenterX - playWidth / 2, iconCenterY + playHeight / 2, iconColor);
-  } else {
-    int barWidth = iconSize / 3.5;
-    int barHeight = iconSize;
-    int barSpacing = iconSize / 4;
-    tft.fillRect(iconCenterX - barSpacing / 2 - barWidth, iconCenterY - barHeight / 2, barWidth, barHeight, iconColor);
-    tft.fillRect(iconCenterX + barSpacing / 2,            iconCenterY - barHeight / 2, barWidth, barHeight, iconColor);
-  }
+  // A lógica de desenhar o ícone de pausa/play foi removida.
+}
+
+void desenhaMenuBarRelatorio() {
+  // Desenha a barra laranja do cabeçalho
+  tft.fillRect(0, 0, SCREEN_WIDTH, MENUBAR_HEIGHT, LARANJA);
+  // Desenha o ícone de seta para voltar (triângulo)
+  tft.fillTriangle(10, MENUBAR_HEIGHT / 2, 30, 10, 30, MENUBAR_HEIGHT - 10, TFT_BLACK);
 }
 
 void desenhaTabelasBase() {
-  int tableWidth = SCREEN_WIDTH / 3;
+  int tableWidth = SCREEN_WIDTH / 3; // Largura de uma das 3 colunas principais
 
   for (int i = 0; i < 3; i++) {
     int tableX = i * tableWidth;
+    // Usa a mesma proporção de 59% que já estava funcionando bem
     int pidColumnWidth = tableWidth * 0.59; 
 
     // ---- Título da coluna PID ----
@@ -255,17 +273,82 @@ void desenhaTabelasBase() {
     tft.setTextDatum(TL_DATUM); 
     tft.setTextColor(TFT_YELLOW);
     tft.drawString("PID", tableX + 5, TABLE_Y + 5);
+    // O título para a coluna de valor permanece vazio, como solicitado.
 
-    // ---- Desenha as linhas da grade ----
-    tft.setTextColor(TFT_WHITE);
+    // ---- Linhas horizontais da grade ----
     for (int j = 0; j < PIDS_PER_TABLE; j++) {
       int rowY = TABLE_Y + 30 + (j * TABLE_ROW_HEIGHT);
-      tft.drawFastHLine(tableX, rowY + TABLE_ROW_HEIGHT - 5, tableWidth - 2, CINZA_CLARO);
+      tft.drawFastHLine(tableX, rowY + TABLE_ROW_HEIGHT - 5, tableWidth - 1, CINZA_CLARO);
     }
 
-    // Linha vertical separadora
-    tft.drawFastVLine(tableX + pidColumnWidth, TABLE_Y + 28, 250, CINZA_CLARO);
+    // ---- Linhas Verticais ----
+    // 1. Linha que separa PID de Valor DENTRO da coluna
+    tft.drawFastVLine(tableX + pidColumnWidth, TABLE_Y + 28, TABLE_ROW_HEIGHT * PIDS_PER_TABLE, CINZA_CLARO);
+
+    // 2. Linha que separa as 3 colunas principais (adiciona a barra que faltava)
+    if (i > 0) {
+        tft.drawFastVLine(tableX, TABLE_Y, TABLE_ROW_HEIGHT * PIDS_PER_TABLE + 30, CINZA_CLARO);
+    }
   }
+}
+
+void desenhaListaErros() {
+  // A posição Y da tabela de erros foi movida para cima
+  int yTabela = MENUBAR_HEIGHT + 50;
+  int xNome = 10;
+  int xMedido = 200;
+  int xEnviado = 330;
+  
+  tft.fillRect(0, yTabela, SCREEN_WIDTH, SCREEN_HEIGHT - yTabela - PAG_BTN_HEIGHT - 10, CINZA_ESCURO);
+
+  tft.setFreeFont(FSSB9);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(TFT_YELLOW);
+  tft.drawString("PID", xNome, yTabela);
+  tft.drawString("Valor Medido", xMedido, yTabela);
+  tft.drawString("Valor Enviado", xEnviado, yTabela);
+  tft.drawFastHLine(5, yTabela + 25, SCREEN_WIDTH - 10, CINZA_CLARO);
+
+  int indiceInicial = paginaAtualRelatorio * itensPorPaginaRelatorio;
+  int indiceFinal = min(indiceInicial + itensPorPaginaRelatorio, (int)errosDetalhados.size());
+
+  tft.setFreeFont(FSS9);
+  tft.setTextColor(TFT_WHITE);
+  int yItem = yTabela + 35;
+  int alturaLinha = 20;
+
+  for (int i = indiceInicial; i < indiceFinal; i++) {
+    const auto& erro = errosDetalhados[i];
+    int yPosItem = yItem + (i - indiceInicial) * alturaLinha;
+    tft.drawString(erro.nomePid, xNome, yPosItem);
+    tft.drawString(String(erro.valorMedido, 1), xMedido, yPosItem);
+    tft.drawString(String(erro.valorGabarito, 1), xEnviado, yPosItem);
+  }
+}
+
+void desenhaPaginacaoRelatorio() {
+  totalPaginasRelatorio = (errosDetalhados.size() + itensPorPaginaRelatorio - 1) / itensPorPaginaRelatorio;
+  if (totalPaginasRelatorio == 0) totalPaginasRelatorio = 1;
+
+  // Posições dos botões na parte inferior
+  int pagXPrev = (SCREEN_WIDTH / 2) - PAG_BTN_WIDTH - 60;
+  int pagXNext = (SCREEN_WIDTH / 2) + 60;
+
+  // Limpa a área de texto da página
+  tft.fillRect(pagXPrev + PAG_BTN_WIDTH, PAG_Y_POS, pagXNext - (pagXPrev + PAG_BTN_WIDTH), PAG_BTN_HEIGHT, CINZA_ESCURO);
+  
+  // Desenha os botões
+  uint16_t corBotaoEsquerda = (paginaAtualRelatorio > 0) ? LARANJA : CINZA_CLARO;
+  desenhaBotao(pagXPrev, PAG_Y_POS, PAG_BTN_WIDTH, PAG_BTN_HEIGHT, "<", corBotaoEsquerda);
+  uint16_t corBotaoDireita = (paginaAtualRelatorio < totalPaginasRelatorio - 1) ? LARANJA : CINZA_CLARO;
+  desenhaBotao(pagXNext, PAG_Y_POS, PAG_BTN_WIDTH, PAG_BTN_HEIGHT, ">", corBotaoDireita);
+  
+  // Desenha o texto da página
+  String textoPagina = String(paginaAtualRelatorio + 1) + " / " + String(totalPaginasRelatorio);
+  tft.setTextColor(TFT_WHITE); 
+  tft.setFreeFont(FSSB9); 
+  tft.setTextDatum(CC_DATUM);
+  tft.drawString(textoPagina, SCREEN_WIDTH / 2, PAG_TEXT_Y);
 }
 
 void atualizaValoresTabelas(const DadosRecebidos& dados, const float erros[]) {
@@ -312,6 +395,32 @@ void mostrarTelaTesteAuto() {
   tft.fillScreen(CINZA_ESCURO);
   desenhaMenuBarTeste();
   desenhaTabelasBase();
+}
+
+void mostrarTelaRelatorio() {
+  tft.fillScreen(CINZA_ESCURO);
+  desenhaMenuBarRelatorio(); 
+  
+  // O deslocamento inicial agora é menor
+  int yOffset = MENUBAR_HEIGHT + 15; 
+
+  // A linha que desenhava "Resultados do Teste Automatico" foi removida.
+  
+  tft.setFreeFont(FSSB9);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(TFT_WHITE);
+
+  if (totalError == 0) {
+    // Mensagem de resumo movida para cima
+    tft.drawString("Teste concluido com um total de 0 erros!", SCREEN_WIDTH / 2, yOffset);
+  } else {
+    // Mensagem de resumo movida para cima
+    String msg = "Teste concluido! Erros: " + String(totalError);
+    tft.drawString(msg, SCREEN_WIDTH / 2, yOffset);
+    
+    desenhaListaErros();
+    desenhaPaginacaoRelatorio();
+  }
 }
 
 void mostrarTelaTesteManual() {
@@ -469,7 +578,7 @@ void initializeELM() {
 
 void conectarDispositivoSelecionado() {
   if (dispositivoSelecionado < 0 || dispositivoSelecionado >= numDispositivosEncontrados) {
-    mostrarTelaBluetooth("Selecione um disp.");
+    mostrarTelaBluetooth("Selecione um\ndispositivo");
     return;
   }
   desenhaBotao(BOTOES_X, BTN_CONECTAR_Y, BOTOES_WIDTH, BTN_HEIGHT, "Conectando...", CINZA_CLARO);
@@ -491,56 +600,6 @@ void finalizarTeste() {
     testIsPaused = false;
     estadoAtual = TELA_MENU_TESTES;
     mostrarTelaMenuTestes();
-}
-
-void mostrarTelaRelatorio() {
-  tft.fillScreen(CINZA_ESCURO);
-  tft.setFreeFont(FSSB9);
-  tft.setTextDatum(TC_DATUM);
-  tft.setTextColor(LARANJA);
-  tft.drawString("Resultados do Teste Automatico", SCREEN_WIDTH / 2, 30);
-
-  tft.setTextColor(TFT_WHITE);
-  if (totalError == 0) {
-    tft.drawString("Teste concluido com um total de 0 erros!", SCREEN_WIDTH / 2, 80);
-  } else {
-    String msg = "Teste concluido! Erros: " + String(totalError);
-    tft.drawString(msg, SCREEN_WIDTH / 2, 80);
-
-    // Desenha o cabeçalho da tabela de erros
-    int yTabela = 120;
-    int xNome = 10;
-    int xMedido = 200;
-    int xEnviado = 330;
-    tft.setTextDatum(TL_DATUM);
-    tft.setTextColor(TFT_YELLOW);
-    tft.drawString("PID", xNome, yTabela);
-    tft.drawString("Valor Medido", xMedido, yTabela);
-    tft.drawString("Valor Enviado", xEnviado, yTabela);
-    tft.drawFastHLine(5, yTabela + 25, SCREEN_WIDTH - 10, CINZA_CLARO);
-
-    // Exibe cada erro na tabela
-    tft.setFreeFont(FSS9);
-    tft.setTextColor(TFT_WHITE);
-    int yItem = yTabela + 35;
-    for (const auto& erro : errosDetalhados) {
-      tft.drawString(erro.nomePid, xNome, yItem);
-      tft.drawString(String(erro.valorMedido, 1), xMedido, yItem);
-      tft.drawString(String(erro.valorGabarito, 1), xEnviado, yItem);
-      yItem += 20; // Próxima linha
-      if(yItem > SCREEN_HEIGHT - 50) break; // Evita transbordar a tela
-    }
-  }
-
-  // Botão para voltar ao menu
-  desenhaBotao(SCREEN_WIDTH - 110, SCREEN_HEIGHT - 45, 100, 40, "Voltar", AZUL);
-}
-
-void handleTouch_TelaRelatorio(uint16_t x, uint16_t y) {
-  // Verifica se o toque foi no botão "Voltar"
-  if ((x > SCREEN_WIDTH - 110) && (x < SCREEN_WIDTH - 10) && (y > SCREEN_HEIGHT - 45) && (y < SCREEN_HEIGHT - 5)) {
-    finalizarTeste(); // A função finalizarTeste já nos leva de volta ao menu e reseta as variáveis
-  }
 }
 
 void handleTouch_TelaBluetooth(uint16_t x, uint16_t y) {
@@ -578,11 +637,38 @@ void handleTouch_TelaMenuTestes(uint16_t x, uint16_t y) {
 }
 
 void handleTouch_TelaTesteAuto(uint16_t x, uint16_t y) {
+  // Verifica o toque apenas no botão de voltar
   if (x < 60 && y < MENUBAR_HEIGHT) {
     finalizarTeste();
-  } else if (x > (SCREEN_WIDTH - 60) && y < MENUBAR_HEIGHT) {
-    testIsPaused = !testIsPaused;
-    desenhaMenuBarTeste();
+  }
+}
+
+void handleTouch_TelaRelatorio(uint16_t x, uint16_t y) {
+  // 1. Verifica toque no botão de voltar (seta)
+  if (x < 60 && y < MENUBAR_HEIGHT) {
+    finalizarTeste();
+    return;
+  }
+
+  // Se não houver erros, não há paginação para verificar
+  if (totalError == 0) return;
+
+  // 2. Verifica toque nos botões de paginação
+  int pagXPrev = (SCREEN_WIDTH / 2) - PAG_BTN_WIDTH - 60;
+  int pagXNext = (SCREEN_WIDTH / 2) + 60;
+
+  if ((x > pagXPrev) && (x < (pagXPrev + PAG_BTN_WIDTH)) && (y > PAG_Y_POS) && (y < (PAG_Y_POS + PAG_BTN_HEIGHT))) {
+    if (paginaAtualRelatorio > 0) {
+      paginaAtualRelatorio--;
+      desenhaListaErros();
+      desenhaPaginacaoRelatorio();
+    }
+  } else if ((x > pagXNext) && (x < (pagXNext + PAG_BTN_WIDTH)) && (y > PAG_Y_POS) && (y < (PAG_Y_POS + PAG_BTN_HEIGHT))) {
+    if (paginaAtualRelatorio < totalPaginasRelatorio - 1) {
+      paginaAtualRelatorio++;
+      desenhaListaErros();
+      desenhaPaginacaoRelatorio();
+    }
   }
 }
 
@@ -595,9 +681,10 @@ void handleTouch_TelasDeTeste(uint16_t x, uint16_t y) {
 void iniciarTesteAutomatico() {
     estadoAtual = TELA_TESTE_AUTO;
     testIsPaused = false;
-    dataIndex = 0;
+    dataIndex = 0; // Mantém o reset inicial
     totalError = 0;
-    errosDetalhados.clear(); // Limpa o relatório de erros anterior
+    errosDetalhados.clear();
+    paginaAtualRelatorio = 0;
     
     digitalWrite(trigPin, LOW);
     delay(100);
@@ -606,15 +693,9 @@ void iniciarTesteAutomatico() {
     initLeitura();
     
     for(int i=0; i<10; i++){
-        while(testIsPaused){
-            uint16_t tx,ty;
-            if(tft.getTouch(&tx,&ty)){
-                handleTouch_TelaTesteAuto(tx,ty);
-                while(tft.getTouch(&tx,&ty)){}
-            }
-            if(estadoAtual!=TELA_TESTE_AUTO)return;
-            delay(100);
-        }
+        dataIndex = i;
+
+        // O laço while para a pausa foi removido, pois o botão não existe mais
         if(estadoAtual!=TELA_TESTE_AUTO)return;
         
         digitalWrite(trigPin, LOW);
@@ -622,12 +703,12 @@ void iniciarTesteAutomatico() {
         DadosRecebidos dados=recebeDados(true,true);
         calculaErro(dados);
         atualizaValoresTabelas(dados,erro);
-        
-        if (++dataIndex >= 10) dataIndex = 0;
 
         digitalWrite(trigPin, HIGH);
         delay(intervaloCapturaDado);
     }
+    
+    digitalWrite(trigPin, LOW);
     
     estadoAtual = TELA_RELATORIO;
     mostrarTelaRelatorio();

@@ -125,6 +125,9 @@ void mostrarTelaTesteManual();
 void mostrarTelaRelatorio();
 void desenhaListaErros();
 void desenhaPaginacaoRelatorio();
+void desenhaRingGauge(int x, int y, int r, const char* rotulo, float valor, float minVal, float maxVal, bool isRpm);
+void desenhaPaginacaoRelatorio();
+void drawThickArc(int x, int y, int r, int thickness, int start_angle, int sweep_angle, uint16_t color); // <-- ADICIONE ESTA LINHA
 
 // ===================================================================================
 // SEÇÃO DE LÓGICA E CONTROLE
@@ -141,7 +144,7 @@ void finalizarTeste();
 void handleTouch_TelaBluetooth(uint16_t x, uint16_t y);
 void handleTouch_TelaMenuTestes(uint16_t x, uint16_t y);
 void handleTouch_TelaTesteAuto(uint16_t x, uint16_t y);
-void handleTouch_TelasDeTeste(uint16_t x, uint16_t y);
+void handleTouch_TelaTesteManual(uint16_t x, uint16_t y);
 void handleTouch_TelaRelatorio(uint16_t x, uint16_t y);
 void iniciarTesteAutomatico();
 void iniciarTesteManual();
@@ -158,6 +161,59 @@ void desenhaBotao(int x, int y, int w, int h, const char* texto, uint16_t cor) {
   tft.setFreeFont(FSSB9);
   tft.setTextDatum(CC_DATUM);
   tft.drawString(texto, x + w / 2, y + h / 2);
+}
+
+void drawThickArc(int x, int y, int r, int thickness, int start_angle, int sweep_angle, uint16_t color) {
+  // Converte os ângulos para o sistema de coordenadas da biblioteca (0 é na direita, sentido horário)
+  start_angle -= 90;
+  
+  // Desenha o arco desenhando várias linhas curtas
+  for (int i = start_angle; i < start_angle + sweep_angle; i++) {
+    float rad = i * 0.0174532925; // Converte graus para radianos
+    float outer_x = x + (r * cos(rad));
+    float outer_y = y + (r * sin(rad));
+    float inner_x = x + ((r - thickness) * cos(rad));
+    float inner_y = y + ((r - thickness) * sin(rad));
+    tft.drawLine(outer_x, outer_y, inner_x, inner_y, color);
+  }
+}
+
+// Assinatura da função atualizada para incluir os novos parâmetros
+void desenhaRingGauge(int x, int y, int r, const char* rotulo, float valor, float minVal, float maxVal, bool isRpm) {
+  
+  // 1. Desenha o anel de fundo cinza
+  tft.drawCircle(x, y, r, CINZA_CLARO);
+  tft.drawCircle(x, y, r - 1, CINZA_CLARO);
+  tft.drawCircle(x, y, r - 2, CINZA_CLARO);
+
+  // 2. Mapeia o valor atual para um ângulo de 0-360 graus e desenha o arco
+  // A função map() lida corretamente com faixas que não começam em zero
+  int sweepAngle = map(valor, minVal, maxVal, 0, 360);
+  int startAngle = 0;
+  int thickness = 3;
+  drawThickArc(x, y, r, thickness, startAngle, sweepAngle, LARANJA);
+
+  // 3. Escreve o rótulo
+  tft.setFreeFont(FSS9); 
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextDatum(BC_DATUM); 
+  tft.drawString(rotulo, x, y - r - 5); 
+
+  // 4. Formata e escreve o valor numérico com base no tipo de PID
+  char valorStr[7]; // Buffer para até 6 caracteres + terminador
+  
+  if (isRpm) {
+    // Se for RPM, formata com 5 dígitos
+    sprintf(valorStr, "%05.0f", valor);
+  } else {
+    // Para os outros, formata com 3 dígitos
+    sprintf(valorStr, "%03.0f", valor);
+  }
+
+  tft.setFreeFont(FSSB12); 
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextDatum(CC_DATUM); 
+  tft.drawString(valorStr, x, y);
 }
 
 void desenhaPaginacao() {
@@ -425,13 +481,39 @@ void mostrarTelaRelatorio() {
 
 void mostrarTelaTesteManual() {
     tft.fillScreen(CINZA_ESCURO);
-    tft.setTextColor(LARANJA);
-    tft.setTextDatum(TC_DATUM);
-    tft.setFreeFont(FSSB9);
-    tft.drawString("Teste Manual Ativo", SCREEN_WIDTH / 2, MSG_Y);
-    tft.setTextColor(TFT_WHITE);
-    tft.drawString("Verifique o Monitor Serial para os resultados.", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
-    desenhaBotao(10, 10, 100, 40, "Voltar", CINZA_CLARO);
+    desenhaMenuBarTeste(); 
+
+    // Parâmetros da grade e dos medidores
+    int numLinhas = 2;
+    int numColunas = 3;
+    int larguraColuna = SCREEN_WIDTH / numColunas;
+    int yOffset = 15;
+    int alturaLinha = (SCREEN_HEIGHT - MENUBAR_HEIGHT - yOffset) / numLinhas;
+    int raioGauge = 40; 
+
+    // --- Definição dos parâmetros para cada PID ---
+    const char* pidLabels[] = {
+        "Carga do Motor", "Temp. Arref.", "Press. Combustivel",
+        "Press. Coletor", "RPM", "Velocidade"
+    };
+    float pidValues[] = {40, -10, 300, 200, 10000, 100};
+    float minValues[] = {0, -40, 0, 0, 0, 0};
+    float maxValues[] = {100, 215, 765, 255, 16384, 255};
+    // ---------------------------------------------
+
+    for (int i = 0; i < numLinhas; i++) {
+        for (int j = 0; j < numColunas; j++) {
+            int pidIndex = i * numColunas + j;
+            
+            int centroX = (j * larguraColuna) + (larguraColuna / 2);
+            int centroY = MENUBAR_HEIGHT + yOffset + (i * alturaLinha) + (alturaLinha / 2);
+            
+            // Passa todos os parâmetros necessários para a função de desenho
+            desenhaRingGauge(centroX, centroY, raioGauge, pidLabels[pidIndex], 
+                             pidValues[pidIndex], minValues[pidIndex], maxValues[pidIndex], 
+                             (pidIndex == 4)); // O 5º PID (índice 4) é o RPM
+        }
+    }
 }
 
 void touch_calibrate() {
@@ -512,7 +594,7 @@ DadosRecebidos recebeDados(bool ativaTrigger, bool rotinaAutomatica) {
     if (rotinaAutomatica){
         SerialBT.print("01 06\r"); String r = readELMResponse(); if(r!="NO DATA") dados.conv06 = (strtoul(r.substring(4).c_str(),NULL,16)*100.0/128.0)-100;
         SerialBT.print("01 07\r"); r = readELMResponse(); if(r!="NO DATA") dados.conv07 = (strtoul(r.substring(4).c_str(),NULL,16)*100.0/128.0)-100;
-        SerialBT.print("01 0F\r"); r = readELMResponse(); if(r!="NO DATA") dados.conv0F = strtol(r.substring(4).c_str(),NULL,16) - 40;
+        SerialBT.print("01 0F\r"); r = readELMResponse(); if(r!="NO DATA") dados.conv0F = (r.substring(4).c_str(),NULL,16) - 40;
         SerialBT.print("01 10\r"); r = readELMResponse(); if(r!="NO DATA") { uint16_t val = strtoul(r.substring(4).c_str(),NULL,16); dados.conv10 = val / 100.0; }
         SerialBT.print("01 11\r"); r = readELMResponse(); if(r!="NO DATA") dados.conv11 = strtoul(r.substring(4).c_str(),NULL,16) * 100.0/255.0;
         SerialBT.print("01 14\r"); r = readELMResponse(); if(r!="NO DATA"){uint16_t o2=strtoul(r.substring(4).c_str(),NULL,16);dados.conv14a=(o2>>8)*0.005;dados.conv14b=((o2&0xFF)*100.0/128.0)-100;}
@@ -521,7 +603,7 @@ DadosRecebidos recebeDados(bool ativaTrigger, bool rotinaAutomatica) {
     }
 
     SerialBT.print("01 04\r"); String r4 = readELMResponse(); if (r4 != "NO DATA") dados.conv04 = strtoul(r4.substring(4).c_str(), NULL, 16) * 100.0 / 255.0;
-    SerialBT.print("01 05\r"); String r5 = readELMResponse(); if (r5 != "NO DATA") dados.conv05 = strtoul(r5.substring(4).c_str(), NULL, 16) - 40;
+    SerialBT.print("01 05\r"); String r5 = readELMResponse(); if (r5 != "NO DATA") dados.conv05 = strtol(r5.substring(4).c_str(), NULL, 16) - 40;
     SerialBT.print("01 0A\r"); String rA = readELMResponse(); if (rA != "NO DATA") dados.conv0A = strtoul(rA.substring(4).c_str(), NULL, 16) * 3.0;
     SerialBT.print("01 0B\r"); String rB = readELMResponse(); if (rB != "NO DATA") dados.conv0B = strtoul(rB.substring(4).c_str(), NULL, 16);
     SerialBT.print("01 0C\r"); String rC = readELMResponse(); if (rC != "NO DATA") { uint16_t raw = strtoul(rC.substring(4).c_str(), NULL, 16); dados.conv0C = raw / 4.0; }
@@ -672,10 +754,11 @@ void handleTouch_TelaRelatorio(uint16_t x, uint16_t y) {
   }
 }
 
-void handleTouch_TelasDeTeste(uint16_t x, uint16_t y) {
-    if ((x > 10) && (x < 110) && (y > 10) && (y < 50)) {
-        finalizarTeste();
-    }
+void handleTouch_TelaTesteManual(uint16_t x, uint16_t y) {
+  // Verifica o toque apenas no botão de voltar
+  if (x < 60 && y < MENUBAR_HEIGHT) {
+    finalizarTeste();
+  }
 }
 
 void iniciarTesteAutomatico() {
@@ -715,19 +798,23 @@ void iniciarTesteAutomatico() {
 }
 
 void iniciarTesteManual() {
-    estadoAtual=TELA_TESTE_MANUAL;
-    mostrarTelaTesteManual();
-    Serial.println("\n===== MODO TESTE MANUAL ATIVO =====");
-    Serial.println("Pressione 'Voltar' na tela para sair.");
-    while(estadoAtual==TELA_TESTE_MANUAL){
+    estadoAtual = TELA_TESTE_MANUAL;
+    mostrarTelaTesteManual(); // Desenha a nova interface uma vez
+
+    // O loop while agora pode ser usado no futuro para atualizar os valores dos gauges
+    // Por enquanto, ele apenas mantém a tela ativa.
+    while(estadoAtual == TELA_TESTE_MANUAL){
         uint16_t tx,ty;
         if(tft.getTouch(&tx,&ty)){
-            handleTouch_TelasDeTeste(tx,ty);
+            handleTouch_TelaTesteManual(tx,ty);
             while(tft.getTouch(&tx,&ty)){}
         }
-        if(estadoAtual!=TELA_TESTE_MANUAL)break;
-        DadosRecebidos dados=recebeDados(false,false);
-        Serial.printf("Carga Motor: %.1f %%, Temp: %.1f C\n",dados.conv04,dados.conv05);
+        
+        // No futuro, a lógica de "recebeDados" e atualização da tela virá aqui
+        // Ex: DadosRecebidos dados = recebeDados(false, false);
+        //     atualizaRingGauges(dados);
+
+        delay(50); // Pequeno delay para não sobrecarregar o processador
     }
 }
 
@@ -759,6 +846,8 @@ void setup() {
   
   estadoAtual = TELA_BLUETOOTH;
   mostrarTelaBluetooth();
+  // estadoAtual = TELA_TESTE_MANUAL;
+  // mostrarTelaTesteManual();
 }
 
 void loop() {
@@ -768,7 +857,7 @@ void loop() {
       case TELA_BLUETOOTH:    handleTouch_TelaBluetooth(tx, ty);   break;
       case TELA_MENU_TESTES:  handleTouch_TelaMenuTestes(tx, ty);  break;
       case TELA_TESTE_AUTO:   handleTouch_TelaTesteAuto(tx, ty);   break;
-      case TELA_TESTE_MANUAL: handleTouch_TelasDeTeste(tx, ty);    break;
+      case TELA_TESTE_MANUAL: handleTouch_TelaTesteManual(tx, ty); break;
       case TELA_RELATORIO:    handleTouch_TelaRelatorio(tx, ty);   break;
     }
     while (tft.getTouch(&tx, &ty)) {}

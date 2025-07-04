@@ -1,7 +1,3 @@
-// ===================================================================================
-// PROJETO COMPLETO - VERSÃO UNIFICADA E FINAL
-// ===================================================================================
-
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include "FS.h"
@@ -9,7 +5,6 @@
 #include "BluetoothSerial.h"
 #include <vector>
 
-// --- OBJETOS GLOBAIS ---
 TFT_eSPI tft = TFT_eSPI();
 BluetoothSerial SerialBT;
 
@@ -20,6 +15,7 @@ BluetoothSerial SerialBT;
 #define TABELA_WIDTH (SCREEN_WIDTH * 0.6)
 #define BOTOES_WIDTH (SCREEN_WIDTH * 0.3)
 #define BTN_HEIGHT 50
+#define BTN_HEIGHT_LARGE 60
 #define ESPACAMENTO 20
 #define MSG_Y 30
 #define TABELA_Y 70
@@ -34,7 +30,7 @@ BluetoothSerial SerialBT;
 #define PAG_BTN_PREV_X (TABELA_X + 20)
 #define PAG_BTN_NEXT_X (TABELA_X + TABELA_WIDTH - PAG_BTN_WIDTH - 20)
 #define PAG_TEXT_Y (PAG_Y_POS + PAG_BTN_HEIGHT / 2)
-#define CINZA_ESCURO 0x39E7
+#define CINZA_ESCURO TFT_BLACK
 #define CINZA_CLARO  TFT_DARKGREY
 #define LARANJA      TFT_ORANGE
 #define VERDE        TFT_GREEN
@@ -43,7 +39,7 @@ BluetoothSerial SerialBT;
 #define CALIBRATION_FILE "/final_calibration_file"
 #define MENUBAR_HEIGHT 40
 #define TABLE_Y (MENUBAR_HEIGHT + 5)
-#define TABLE_ROW_HEIGHT 48
+#define TABLE_ROW_HEIGHT 54
 #define NUM_PIDS 15
 #define PIDS_PER_TABLE 5
 #define trigPin 5
@@ -76,7 +72,7 @@ int totalPaginasRelatorio = 0;
 
 // Arrays de gabarito para o teste automático
 float engLoad[11]         = {50, 90, 23, 75, 13, 46, 88, 44, 35, 68, 0};
-float EngCoolTemp[11]     = {125, -20, 45, 13, 96, 32, 67, 103, 19, 75, 0};
+float EngCoolTemp[11]     = {125, -10, 45, 13, 96, 32, 67, 103, 19, 75, 0};
 float STFT[11]            = {-10, 55, -80, 12, -40, 9, -15, 23, -9, 35, 0};
 float LTFT[11]            = {-15, -22, 8, -13, 4, -9, 5, 60, 10, -4, 0};
 float FuelPressure[11]    = {102, 235, 88, 345, 157, 298, 45, 188, 277, 66, 0};
@@ -115,20 +111,22 @@ const char* pidNames[NUM_PIDS] = {
 void desenhaBotao(int x, int y, int w, int h, const char* texto, uint16_t cor);
 void desenhaPaginacao();
 void desenhaListaDispositivos();
-void mostrarTelaBluetooth(const char* msgErro = "");
-void mostrarTelaMenuTestes();
 void desenhaMenuBarTeste();
 void desenhaTabelasBase();
 void desenhaMenuBarRelatorio();
-void atualizaValoresTabelas(const DadosRecebidos& dados, const float erros[]);
-void mostrarTelaTesteAuto();
-void mostrarTelaTesteManual();
-void mostrarTelaRelatorio();
+void desenhaMenuBarBluetooth();
 void desenhaListaErros();
 void desenhaPaginacaoRelatorio();
 void desenhaRingGauge(int x, int y, int r, const char* rotulo, float valor, float minVal, float maxVal, bool isRpm, uint16_t corValor);
-void desenhaPaginacaoRelatorio();
-void drawThickArc(int x, int y, int r, int thickness, int start_angle, int sweep_angle, uint16_t color); // <-- ADICIONE ESTA LINHA
+void drawThickArc(int x, int y, int r, int thickness, int start_angle, int sweep_angle, uint16_t color);
+
+void mostrarTelaBluetooth(const char* msgErro = "");
+void mostrarTelaMenuTestes();
+void mostrarTelaTesteAuto();
+void mostrarTelaRelatorio();
+void mostrarTelaTesteManual();
+
+void atualizaValoresTabelas(const DadosRecebidos& dados, const float erros[]);
 
 // ===================================================================================
 // SEÇÃO DE LÓGICA E CONTROLE
@@ -157,7 +155,8 @@ void sincronizarIndices();
 // ===================================================================================
 
 void desenhaBotao(int x, int y, int w, int h, const char* texto, uint16_t cor) {
-  tft.fillRoundRect(x, y, w, h, 8, cor);
+  tft.fillRoundRect(x, y, w, h, 8, cor); // Desenha o preenchimento do botão
+  tft.drawRoundRect(x, y, w, h, 8, TFT_WHITE); // Desenha a borda branca ao redor do botão
   tft.setTextColor(TFT_WHITE, cor);
   tft.setFreeFont(FSSB9);
   tft.setTextDatum(CC_DATUM);
@@ -165,10 +164,9 @@ void desenhaBotao(int x, int y, int w, int h, const char* texto, uint16_t cor) {
 }
 
 void drawThickArc(int x, int y, int r, int thickness, int start_angle, int sweep_angle, uint16_t color) {
-  // Converte os ângulos para o sistema de coordenadas da biblioteca (0 é na direita, sentido horário)
-  start_angle -= 90;
+  start_angle -= 90; // Converte os ângulos para o sistema de coordenadas da biblioteca (0 é na direita, sentido horário)
   
-  // Desenha o arco desenhando várias linhas curtas
+  // Desenha o arco por partes
   for (int i = start_angle; i < start_angle + sweep_angle; i++) {
     float rad = i * 0.0174532925; // Converte graus para radianos
     float outer_x = x + (r * cos(rad));
@@ -184,15 +182,13 @@ void desenhaRingGauge(int x, int y, int r, const char* rotulo, float valor, floa
   tft.drawCircle(x, y, r, CINZA_CLARO);
   tft.drawCircle(x, y, r - 1, CINZA_CLARO);
   tft.drawCircle(x, y, r - 2, CINZA_CLARO);
-  
-  // Limpa a área do anel com a cor de fundo
-  drawThickArc(x, y, r, 3, 0, 360, CINZA_CLARO);
+  drawThickArc(x, y, r, 3, 0, 360, CINZA_CLARO); // Limpa a área do anel com a cor de fundo
 
   // 2. Desenha o arco inicial
   int sweepAngle = map(valor, minVal, maxVal, 0, 360);
   drawThickArc(x, y, r, 3, 0, sweepAngle, LARANJA);
   
-  // 3. Escreve o rótulo (que não muda)
+  // 3. Escreve o rótulo
   tft.setFreeFont(FSS9); 
   tft.setTextColor(TFT_WHITE);
   tft.setTextDatum(BC_DATUM); 
@@ -237,58 +233,78 @@ void desenhaListaDispositivos() {
 
 void mostrarTelaBluetooth(const char* msgErro) {
   tft.fillScreen(CINZA_ESCURO);
+  desenhaMenuBarBluetooth();
+
   tft.setFreeFont(FSSB9);
-  tft.setTextDatum(TC_DATUM);
-  tft.setTextColor(LARANJA, CINZA_ESCURO);
-  tft.drawString("Conecte ao dispositivo OBD2", SCREEN_WIDTH / 2, MSG_Y);
-  tft.drawRect(TABELA_X, TABELA_Y, TABELA_WIDTH, TABELA_HEIGHT, TFT_WHITE);
-  tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(TFT_YELLOW, CINZA_ESCURO);
-  tft.drawString("Dispositivos:", TABELA_X + 5, TABELA_Y + 5);
+  tft.setTextColor(TFT_WHITE, LARANJA);
+  tft.setTextDatum(CC_DATUM);
+  
+  // Desenha o texto usando o centro exato do cabeçalho como coordenada.
+  tft.drawString("Conectar ao Scanner", SCREEN_WIDTH / 2, MENUBAR_HEIGHT / 2);
+
+  const int NOVO_TABELA_Y = MENUBAR_HEIGHT + 20;
+  const int ALTURA_BOTAO = 60;
+  const int ESPACO_BOTAO = 25;
+
+  tft.drawRect(TABELA_X, NOVO_TABELA_Y, TABELA_WIDTH, TABELA_HEIGHT, TFT_WHITE);
+
+  if (numDispositivosEncontrados > 0) {
+    tft.setTextColor(TFT_WHITE, CINZA_ESCURO);
+    tft.setTextDatum(TL_DATUM); // Altera o datum para o texto da lista
+    tft.drawString("Selecione o scanner abaixo:", TABELA_X + 5, NOVO_TABELA_Y + 5);
+  }
+
   desenhaListaDispositivos();
   desenhaPaginacao();
-  desenhaBotao(BOTOES_X, BTN_PROCURAR_Y, BOTOES_WIDTH, BTN_HEIGHT, "Procurar", VERDE);
-  desenhaBotao(BOTOES_X, BTN_CONECTAR_Y, BOTOES_WIDTH, BTN_HEIGHT, "Conectar", AZUL);
-
-  // Limpa a área de mensagem de erro antiga para evitar sobreposição
-  tft.fillRect(BOTOES_X, MENSAGEM_ERRO_Y, BOTOES_WIDTH, 60, CINZA_ESCURO);
+  
+  // Desenho dos botões na parte direita da tela
+  desenhaBotao(BOTOES_X, NOVO_TABELA_Y, BOTOES_WIDTH, ALTURA_BOTAO, "Buscar", LARANJA);
+  desenhaBotao(BOTOES_X, NOVO_TABELA_Y + ALTURA_BOTAO + ESPACO_BOTAO, BOTOES_WIDTH, ALTURA_BOTAO, "Conectar", CINZA_CLARO);
 
   if (strlen(msgErro) > 0) {
     tft.setTextColor(VERMELHO, CINZA_ESCURO);
-    tft.setTextDatum(TL_DATUM); // Alinha o texto no topo e à esquerda
-
+    tft.setTextDatum(TL_DATUM);
     String erroStr(msgErro);
     int newlineIndex = erroStr.indexOf('\n');
-
     if (newlineIndex != -1) {
-      // Se encontrou quebra de linha
       String linha1 = erroStr.substring(0, newlineIndex);
       String linha2 = erroStr.substring(newlineIndex + 1);
       tft.drawString(linha1, BOTOES_X, MENSAGEM_ERRO_Y);
-      tft.drawString(linha2, BOTOES_X, MENSAGEM_ERRO_Y + 25); // Posição Y da segunda linha
+      tft.drawString(linha2, BOTOES_X, MENSAGEM_ERRO_Y + 25);
     } else {
-      // Se não houver quebra de linha, exibe normalmente
       tft.drawString(erroStr, BOTOES_X, MENSAGEM_ERRO_Y);
     }
   }
 }
 
 void mostrarTelaMenuTestes() {
-  tft.fillScreen(CINZA_ESCURO);
-  tft.setTextColor(LARANJA);
-  tft.setTextDatum(TC_DATUM);
+  tft.fillScreen(CINZA_ESCURO); // Limpa a tela e desenha o cabeçalho laranja
+  desenhaMenuBarBluetooth(); // Reutiliza a função que desenha a barra sem o botão voltar
+
+  // Cabeçalho
+  tft.setTextColor(TFT_WHITE, LARANJA);
+  tft.setTextDatum(CC_DATUM);
   tft.setFreeFont(FSSB9);
-  tft.drawString("Conectado!", SCREEN_WIDTH / 2, MSG_Y);
-  tft.drawString("Selecione o modo de teste:", SCREEN_WIDTH / 2, MSG_Y + 30);
+  tft.drawString("Menu", SCREEN_WIDTH / 2, MENUBAR_HEIGHT / 2);
+
+  // --- Definições para os novos botões ---
   int btnWidth = SCREEN_WIDTH * 0.6;
-  int btnY = SCREEN_HEIGHT / 2 - BTN_HEIGHT;
-  desenhaBotao((SCREEN_WIDTH - btnWidth) / 2, btnY, btnWidth, BTN_HEIGHT, "Teste Automático", AZUL);
-  desenhaBotao((SCREEN_WIDTH - btnWidth) / 2, btnY + BTN_HEIGHT + ESPACAMENTO, btnWidth, BTN_HEIGHT, "Teste Manual", VERDE);
+  int btnHeight = 60;
+  int btnY_auto = MENUBAR_HEIGHT + (SCREEN_HEIGHT - MENUBAR_HEIGHT - (btnHeight * 2 + ESPACAMENTO)) / 2;
+  int btnY_manual = btnY_auto + btnHeight + ESPACAMENTO;
+  int btnX = (SCREEN_WIDTH - btnWidth) / 2;
+
+  desenhaBotao(btnX, btnY_auto, btnWidth, btnHeight, "Rotina automatizada", LARANJA);
+  desenhaBotao(btnX, btnY_manual, btnWidth, btnHeight, "Rotina manual", LARANJA);
 }
 
 void desenhaMenuBarTeste() {
   tft.fillRect(0, 0, SCREEN_WIDTH, MENUBAR_HEIGHT, LARANJA);
   tft.fillTriangle(10, MENUBAR_HEIGHT / 2, 30, 10, 30, MENUBAR_HEIGHT - 10, TFT_BLACK);
+}
+
+void desenhaMenuBarBluetooth() {
+  tft.fillRect(0, 0, SCREEN_WIDTH, MENUBAR_HEIGHT, LARANJA);
 }
 
 void desenhaMenuBarRelatorio() {
@@ -303,35 +319,24 @@ void desenhaTabelasBase() {
 
   for (int i = 0; i < 3; i++) {
     int tableX = i * tableWidth;
-    // Usa a mesma proporção de 59% que já estava funcionando bem
     int pidColumnWidth = tableWidth * 0.59; 
-
-    // ---- Título da coluna PID ----
-    tft.setFreeFont(FSS9); 
-    tft.setTextDatum(TL_DATUM); 
-    tft.setTextColor(TFT_YELLOW);
-    tft.drawString("PID", tableX + 5, TABLE_Y + 5);
-    // O título para a coluna de valor permanece vazio, como solicitado.
 
     // ---- Linhas horizontais da grade ----
     for (int j = 0; j < PIDS_PER_TABLE; j++) {
-      int rowY = TABLE_Y + 30 + (j * TABLE_ROW_HEIGHT);
-      tft.drawFastHLine(tableX, rowY + TABLE_ROW_HEIGHT - 5, tableWidth - 1, CINZA_CLARO);
+      int rowY = TABLE_Y + (j * TABLE_ROW_HEIGHT);
+      tft.drawFastHLine(tableX, rowY + TABLE_ROW_HEIGHT, tableWidth - 1, CINZA_CLARO);
     }
 
     // ---- Linhas Verticais ----
-    // 1. Linha que separa PID de Valor DENTRO da coluna
-    tft.drawFastVLine(tableX + pidColumnWidth, TABLE_Y + 28, TABLE_ROW_HEIGHT * PIDS_PER_TABLE, CINZA_CLARO);
-
-    // 2. Linha que separa as 3 colunas principais (adiciona a barra que faltava)
+    // Linha que separa as 3 colunas principais
     if (i > 0) {
         tft.drawFastVLine(tableX, TABLE_Y, TABLE_ROW_HEIGHT * PIDS_PER_TABLE + 30, CINZA_CLARO);
+        tft.drawFastVLine(tableX + 1, TABLE_Y, TABLE_ROW_HEIGHT * PIDS_PER_TABLE + 30, CINZA_CLARO);
     }
   }
 }
 
 void desenhaListaErros() {
-  // A posição Y da tabela de erros foi movida para cima
   int yTabela = MENUBAR_HEIGHT + 50;
   int xNome = 10;
   int xMedido = 200;
@@ -341,8 +346,8 @@ void desenhaListaErros() {
 
   tft.setFreeFont(FSSB9);
   tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(TFT_YELLOW);
-  tft.drawString("PID", xNome, yTabela);
+  tft.setTextColor(LARANJA);
+  tft.drawString("Sensor", xNome, yTabela);
   tft.drawString("Valor Medido", xMedido, yTabela);
   tft.drawString("Valor Enviado", xEnviado, yTabela);
   tft.drawFastHLine(5, yTabela + 25, SCREEN_WIDTH - 10, CINZA_CLARO);
@@ -372,19 +377,19 @@ void desenhaPaginacaoRelatorio() {
   int pagXPrev = (SCREEN_WIDTH / 2) - PAG_BTN_WIDTH - 60;
   int pagXNext = (SCREEN_WIDTH / 2) + 60;
 
-  // Limpa a área de texto da página
+  // Limpa a área de texto da página antiga
   tft.fillRect(pagXPrev + PAG_BTN_WIDTH, PAG_Y_POS, pagXNext - (pagXPrev + PAG_BTN_WIDTH), PAG_BTN_HEIGHT, CINZA_ESCURO);
-  
-  // Desenha os botões
+
   uint16_t corBotaoEsquerda = (paginaAtualRelatorio > 0) ? LARANJA : CINZA_CLARO;
   desenhaBotao(pagXPrev, PAG_Y_POS, PAG_BTN_WIDTH, PAG_BTN_HEIGHT, "<", corBotaoEsquerda);
+  
   uint16_t corBotaoDireita = (paginaAtualRelatorio < totalPaginasRelatorio - 1) ? LARANJA : CINZA_CLARO;
   desenhaBotao(pagXNext, PAG_Y_POS, PAG_BTN_WIDTH, PAG_BTN_HEIGHT, ">", corBotaoDireita);
   
-  // Desenha o texto da página
+  // Desenha o texto da página "n / n"
   String textoPagina = String(paginaAtualRelatorio + 1) + " / " + String(totalPaginasRelatorio);
-  tft.setTextColor(TFT_WHITE); 
-  tft.setFreeFont(FSSB9); 
+  tft.setTextColor(TFT_WHITE);
+  tft.setFreeFont(FSSB9);
   tft.setTextDatum(CC_DATUM);
   tft.drawString(textoPagina, SCREEN_WIDTH / 2, PAG_TEXT_Y);
 }
@@ -399,7 +404,7 @@ void atualizaValoresTabelas(const DadosRecebidos& dados, const float erros[]) {
     int pidColumnWidth = tableWidth * 0.59;
 
     for (int j = 0; j < PIDS_PER_TABLE; j++) {
-      int rowY = TABLE_Y + 30 + (j * TABLE_ROW_HEIGHT);
+      int rowY = TABLE_Y + (j * TABLE_ROW_HEIGHT);
       int pidIndex = i * PIDS_PER_TABLE + j;
       if (pidIndex < NUM_PIDS) {
         
@@ -432,9 +437,9 @@ void atualizaValoresTabelas(const DadosRecebidos& dados, const float erros[]) {
 void atualizaValorTexto(int x, int y, float valor, uint16_t cor, bool isRpm) {
   char valorStr[7];
   if (isRpm) {
-    sprintf(valorStr, "%05.0f", valor);
+    sprintf(valorStr, "%.0f", valor);
   } else {
-    sprintf(valorStr, "%03.0f", valor);
+    sprintf(valorStr, "%.0f", valor);
   }
 
   tft.setFreeFont(FSSB12);
@@ -449,7 +454,7 @@ void atualizaValorTexto(int x, int y, float valor, uint16_t cor, bool isRpm) {
 }
 
 void atualizaRingGauges(const DadosRecebidos& dados) {
-    // Parâmetros dos gauges (os mesmos da função mostrarTelaTesteManual)
+    // Parâmetros dos gauges
     int numLinhas = 2;
     int numColunas = 3;
     int larguraColuna = SCREEN_WIDTH / numColunas;
@@ -482,28 +487,37 @@ void atualizaRingGauges(const DadosRecebidos& dados) {
 void mostrarTelaTesteAuto() {
   tft.fillScreen(CINZA_ESCURO);
   desenhaMenuBarTeste();
+  tft.setTextColor(TFT_WHITE, LARANJA);
+  tft.setTextDatum(CC_DATUM);
+  tft.setFreeFont(FSSB9);
+  tft.drawString("Rotina Automatizada", SCREEN_WIDTH / 2, MENUBAR_HEIGHT / 2);
+  tft.fillRect(0, 0, 40, MENUBAR_HEIGHT, LARANJA);
   desenhaTabelasBase();
 }
 
 void mostrarTelaRelatorio() {
   tft.fillScreen(CINZA_ESCURO);
-  desenhaMenuBarRelatorio(); 
+  desenhaMenuBarRelatorio();
+  tft.setTextColor(TFT_WHITE, LARANJA);
+  tft.setTextDatum(CC_DATUM);
+  tft.setFreeFont(FSSB9);
+  tft.drawString("Resultados", SCREEN_WIDTH / 2, MENUBAR_HEIGHT / 2);
   
-  // O deslocamento inicial agora é menor
   int yOffset = MENUBAR_HEIGHT + 15; 
-
-  // A linha que desenhava "Resultados do Teste Automatico" foi removida.
   
   tft.setFreeFont(FSSB9);
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(TFT_WHITE);
 
   if (totalError == 0) {
-    // Mensagem de resumo movida para cima
-    tft.drawString("Teste concluido com um total de 0 erros!", SCREEN_WIDTH / 2, yOffset);
+    // Define o ponto de referência como Centro-Centro para o alinhamento
+    tft.setTextDatum(CC_DATUM);
+    // Desenha a mensagem no centro exato da tela
+    tft.drawString("Teste finalizado! Total de 0 erros.", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
   } else {
-    // Mensagem de resumo movida para cima
-    String msg = "Teste concluido! Erros: " + String(totalError);
+    // Mantém o alinhamento antigo (Topo-Centro) para a tela com a lista de erros
+    tft.setTextDatum(TC_DATUM);
+    String msg = "Teste finalizado! Erros: " + String(totalError);
     tft.drawString(msg, SCREEN_WIDTH / 2, yOffset);
     
     desenhaListaErros();
@@ -543,7 +557,7 @@ void mostrarTelaTesteManual() {
             // Passa todos os parâmetros necessários para a função de desenho
             desenhaRingGauge(centroX, centroY, raioGauge, pidLabels[pidIndex], 
                  pidValues[pidIndex], minValues[pidIndex], maxValues[pidIndex], 
-                 (pidIndex == 4), TFT_WHITE); // Passa a cor padrão
+                 (pidIndex == 4), TFT_WHITE);
         }
     }
 }
@@ -576,7 +590,14 @@ void touch_calibrate() {
 }
 
 void procurarDispositivos() {
-  desenhaBotao(BOTOES_X, BTN_PROCURAR_Y, BOTOES_WIDTH, BTN_HEIGHT, "Procurando...", CINZA_CLARO);
+  // Posições e tamanhos dos botões
+  const int NOVO_BOTOES_Y = MENUBAR_HEIGHT + 20;
+  const int ALTURA_BOTAO = 60;
+
+  // Etapa 2: Botão muda para "Buscando..." e fica cinza
+  desenhaBotao(BOTOES_X, NOVO_BOTOES_Y, BOTOES_WIDTH, ALTURA_BOTAO, "Buscando...", CINZA_CLARO);
+
+  // Limpa a lista de dispositivos anterior
   if(dispositivosEncontrados != nullptr){
     for (int i = 0; i < numDispositivosEncontrados; i++) {
       delete dispositivosEncontrados[i].pAddress;
@@ -587,7 +608,9 @@ void procurarDispositivos() {
   numDispositivosEncontrados = 0;
   dispositivoSelecionado = -1;
   paginaAtual = 0;
-  BTScanResults* results = SerialBT.discover(10000);
+
+  // Busca por dispositivos
+  BTScanResults* results = SerialBT.discover(5000); // 5 segundos de busca
   if (results) {
     numDispositivosEncontrados = results->getCount();
     if (numDispositivosEncontrados > 0) {
@@ -600,9 +623,12 @@ void procurarDispositivos() {
     }
   }
   results->~BTScanResults();
-  desenhaBotao(BOTOES_X, BTN_PROCURAR_Y, BOTOES_WIDTH, BTN_HEIGHT, "Procurar", VERDE);
-  desenhaListaDispositivos();
-  desenhaPaginacao();
+  
+  // Etapa 3: Redesenha a tela inteira para atualizar tudo
+  mostrarTelaBluetooth(); // Redesenha a tela base
+  
+  // Etapa 3 (continuação): Botão "Buscar" volta ao texto original, mas cinza
+  desenhaBotao(BOTOES_X, NOVO_BOTOES_Y, BOTOES_WIDTH, ALTURA_BOTAO, "Buscar", CINZA_CLARO);
 }
 
 String readELMResponse() {
@@ -626,7 +652,7 @@ DadosRecebidos recebeDados(bool ativaTrigger, bool rotinaAutomatica) {
     if (rotinaAutomatica){
         SerialBT.print("01 06\r"); String r = readELMResponse(); if(r!="NO DATA") dados.conv06 = (strtoul(r.substring(4).c_str(),NULL,16)*100.0/128.0)-100;
         SerialBT.print("01 07\r"); r = readELMResponse(); if(r!="NO DATA") dados.conv07 = (strtoul(r.substring(4).c_str(),NULL,16)*100.0/128.0)-100;
-        SerialBT.print("01 0F\r"); r = readELMResponse(); if(r!="NO DATA") dados.conv0F = (r.substring(4).c_str(),NULL,16) - 40;
+        SerialBT.print("01 0F\r"); r = readELMResponse(); if(r!="NO DATA") dados.conv0F = strtol(r.substring(4).c_str(), NULL, 16) - 40;
         SerialBT.print("01 10\r"); r = readELMResponse(); if(r!="NO DATA") { uint16_t val = strtoul(r.substring(4).c_str(),NULL,16); dados.conv10 = val / 100.0; }
         SerialBT.print("01 11\r"); r = readELMResponse(); if(r!="NO DATA") dados.conv11 = strtoul(r.substring(4).c_str(),NULL,16) * 100.0/255.0;
         SerialBT.print("01 14\r"); r = readELMResponse(); if(r!="NO DATA"){uint16_t o2=strtoul(r.substring(4).c_str(),NULL,16);dados.conv14a=(o2>>8)*0.005;dados.conv14b=((o2&0xFF)*100.0/128.0)-100;}
@@ -648,7 +674,6 @@ void calculaErro(const DadosRecebidos& d) {
   float valoresGabarito[]={engLoad[dataIndex],EngCoolTemp[dataIndex],STFT[dataIndex],LTFT[dataIndex],FuelPressure[dataIndex],IntManifAbsPres[dataIndex],rpm[dataIndex],VehiSpeed[dataIndex],IntAirTemp[dataIndex],MAF[dataIndex],ThrPos[dataIndex],VOS1[dataIndex],STFT1[dataIndex],VOS2[dataIndex],STFT2[dataIndex],CMV[dataIndex]};
   float valoresLidos[]={d.conv04,d.conv05,d.conv06,d.conv07,d.conv0A,d.conv0B,d.conv0C,d.conv0D,d.conv0F,d.conv10,d.conv11,d.conv14a,d.conv14b,d.conv15a,d.conv15b,d.conv42};
   
-  // O nome do 16º PID (CMV) não está na lista pidNames, vamos adicioná-lo manualmente para o relatório
   const char* pidNamesReport[16];
   for(int i=0; i<15; i++) pidNamesReport[i] = pidNames[i];
   pidNamesReport[15] = "Tensao Modulo";
@@ -695,9 +720,17 @@ void conectarDispositivoSelecionado() {
     mostrarTelaBluetooth("Selecione um\ndispositivo");
     return;
   }
-  desenhaBotao(BOTOES_X, BTN_CONECTAR_Y, BOTOES_WIDTH, BTN_HEIGHT, "Conectando...", CINZA_CLARO);
+
+  const int NOVO_BOTOES_Y = MENUBAR_HEIGHT + 20;
+  const int ALTURA_BOTAO = 60;
+  const int ESPACO_BOTAO = 25;
+  const int y_conectar = NOVO_BOTOES_Y + ALTURA_BOTAO + ESPACO_BOTAO;
+
+  desenhaBotao(BOTOES_X, y_conectar, BOTOES_WIDTH, ALTURA_BOTAO, "Conectando...", CINZA_CLARO);
+
   DispositivoBluetooth* dev = &dispositivosEncontrados[dispositivoSelecionado];
   btConectado = SerialBT.connect(*dev->pAddress);
+
   if (btConectado) {
     initializeELM();
     estadoAtual = TELA_MENU_TESTES;
@@ -718,23 +751,44 @@ void finalizarTeste() {
 }
 
 void handleTouch_TelaBluetooth(uint16_t x, uint16_t y) {
-  if ((x > BOTOES_X) && (x < (BOTOES_X + BOTOES_WIDTH)) && (y > BTN_PROCURAR_Y) && (y < (BTN_PROCURAR_Y + BTN_HEIGHT))) {
+  const int NOVO_BOTOES_Y = MENUBAR_HEIGHT + 20;
+  const int ALTURA_BOTAO = 60;
+  const int ESPACO_BOTAO = 25;
+  const int y_conectar = NOVO_BOTOES_Y + ALTURA_BOTAO + ESPACO_BOTAO;
+
+  // Toque no botão "Buscar"
+  if ((x > BOTOES_X) && (x < (BOTOES_X + BOTOES_WIDTH)) && (y > NOVO_BOTOES_Y) && (y < (NOVO_BOTOES_Y + ALTURA_BOTAO))) {
     procurarDispositivos();
-  } else if ((x > BOTOES_X) && (x < (BOTOES_X + BOTOES_WIDTH)) && (y > BTN_CONECTAR_Y) && (y < (BTN_CONECTAR_Y + BTN_HEIGHT))) {
-    conectarDispositivoSelecionado();
-  } else if ((x > PAG_BTN_PREV_X) && (x < (PAG_BTN_PREV_X + PAG_BTN_WIDTH)) && (y > PAG_Y_POS) && (y < (PAG_Y_POS + PAG_BTN_HEIGHT))) {
+  } 
+  // Toque no botão "Conectar"
+  else if ((x > BOTOES_X) && (x < (BOTOES_X + BOTOES_WIDTH)) && (y > y_conectar) && (y < (y_conectar + ALTURA_BOTAO))) {
+    // Só permite conectar se um dispositivo estiver selecionado
+    if (dispositivoSelecionado != -1) {
+        conectarDispositivoSelecionado();
+    }
+  }
+  else if ((x > PAG_BTN_PREV_X) && (x < (PAG_BTN_PREV_X + PAG_BTN_WIDTH)) && (y > PAG_Y_POS) && (y < (PAG_Y_POS + PAG_BTN_HEIGHT))) {
     if (paginaAtual > 0) { paginaAtual--; desenhaListaDispositivos(); desenhaPaginacao(); }
   } else if ((x > PAG_BTN_NEXT_X) && (x < (PAG_BTN_NEXT_X + PAG_BTN_WIDTH)) && (y > PAG_Y_POS) && (y < (PAG_Y_POS + PAG_BTN_HEIGHT))) {
     if (paginaAtual < totalPaginas - 1) { paginaAtual++; desenhaListaDispositivos(); desenhaPaginacao(); }
-  } else if ((x > TABELA_X) && (x < (TABELA_X + TABELA_WIDTH)) && (y > (TABELA_Y + 25)) && (y < (PAG_Y_POS - 5))) {
-    int listaStartY = TABELA_Y + 25;
+  } 
+  else if ((x > TABELA_X) && (x < (TABELA_X + TABELA_WIDTH)) && (y > (MENUBAR_HEIGHT + 20)) && (y < (PAG_Y_POS - 5))) {
+    int listaStartY = MENUBAR_HEIGHT + 20 + 25; // Posição inicial da lista
     int alturaDisponivel = TABELA_HEIGHT - 30;
     int alturaLinha = alturaDisponivel / itensPorPagina;
     int itemClicadoNaPagina = (y - listaStartY) / alturaLinha;
     int novoIndiceSelecionado = (paginaAtual * itensPorPagina) + itemClicadoNaPagina;
+
     if (novoIndiceSelecionado < numDispositivosEncontrados) {
       dispositivoSelecionado = (dispositivoSelecionado == novoIndiceSelecionado) ? -1 : novoIndiceSelecionado;
-      desenhaListaDispositivos();
+      desenhaListaDispositivos(); // Redesenha a lista para destacar a seleção
+
+      // Etapa 4: Atualiza a cor do botão "Conectar"
+      if (dispositivoSelecionado != -1) {
+        desenhaBotao(BOTOES_X, y_conectar, BOTOES_WIDTH, ALTURA_BOTAO, "Conectar", LARANJA); // Ativa o botão
+      } else {
+        desenhaBotao(BOTOES_X, y_conectar, BOTOES_WIDTH, ALTURA_BOTAO, "Conectar", CINZA_CLARO); // Desativa o botão
+      }
     }
   }
 }
@@ -752,10 +806,7 @@ void handleTouch_TelaMenuTestes(uint16_t x, uint16_t y) {
 }
 
 void handleTouch_TelaTesteAuto(uint16_t x, uint16_t y) {
-  // Verifica o toque apenas no botão de voltar
-  if (x < 60 && y < MENUBAR_HEIGHT) {
-    finalizarTeste();
-  }
+  // Nenhuma interação nessa tela
 }
 
 void handleTouch_TelaRelatorio(uint16_t x, uint16_t y) {
@@ -765,7 +816,6 @@ void handleTouch_TelaRelatorio(uint16_t x, uint16_t y) {
     return;
   }
 
-  // Se não houver erros, não há paginação para verificar
   if (totalError == 0) return;
 
   // 2. Verifica toque nos botões de paginação
@@ -797,7 +847,7 @@ void handleTouch_TelaTesteManual(uint16_t x, uint16_t y) {
 void iniciarTesteAutomatico() {
     estadoAtual = TELA_TESTE_AUTO;
     testIsPaused = false;
-    dataIndex = 0; // Mantém o reset inicial
+    dataIndex = 0;
     totalError = 0;
     errosDetalhados.clear();
     paginaAtualRelatorio = 0;
@@ -810,10 +860,8 @@ void iniciarTesteAutomatico() {
     
     for(int i=0; i<10; i++){
         dataIndex = i;
-
-        // O laço while para a pausa foi removido, pois o botão não existe mais
         if(estadoAtual!=TELA_TESTE_AUTO)return;
-        
+    
         digitalWrite(trigPin, LOW);
         
         DadosRecebidos dados=recebeDados(true,true);
@@ -832,14 +880,16 @@ void iniciarTesteAutomatico() {
 
 void iniciarTesteManual() {
     estadoAtual = TELA_TESTE_MANUAL;
-    
-    // Array para guardar o ângulo anterior de cada medidor.
-    // 'static' faz com que os valores sejam preservados entre as chamadas do loop.
+
     static int angulosAnteriores[6] = {0,0,0,0,0,0};
 
     // --- PARÂMETROS E DESENHO INICIAL ---
     tft.fillScreen(CINZA_ESCURO);
     desenhaMenuBarTeste();
+    tft.setTextColor(TFT_WHITE, LARANJA);
+    tft.setTextDatum(CC_DATUM);
+    tft.setFreeFont(FSSB9);
+    tft.drawString("Rotina Manual", SCREEN_WIDTH / 2, MENUBAR_HEIGHT / 2);
 
     const char* pidLabels[] = {"Carga do Motor", "Temp. Arref.", "Press. Combustivel", "Press. Coletor", "RPM", "Velocidade"};
     float minValues[] = {0, -40, 0, 0, 0, 0};
@@ -856,10 +906,10 @@ void iniciarTesteManual() {
         int centroX = (coluna * larguraColuna) + (larguraColuna / 2);
         int centroY = MENUBAR_HEIGHT + yOffset + (linha * alturaLinha) + (alturaLinha / 2);
         
-        // Desenha o gauge estático (fundo, rótulo e valor inicial em 0)
-        desenhaRingGauge(centroX, centroY, raioGauge, pidLabels[i], 0, minValues[i], maxValues[i]);
-        atualizaValorTexto(centroX, centroY, 0, TFT_WHITE, (i == 4));
-        angulosAnteriores[i] = 0; // Reseta o estado
+        // Desenha o gauge estático usando o valor mínimo correto para cada PID
+        desenhaRingGauge(centroX, centroY, raioGauge, pidLabels[i], minValues[i], minValues[i], maxValues[i]);
+        atualizaValorTexto(centroX, centroY, minValues[i], TFT_WHITE, (i == 4));
+        angulosAnteriores[i] = 0; // Reseta o estado (o ângulo para o valor mínimo é sempre 0)
     }
 
     // --- LOOP DE ATUALIZAÇÃO PRINCIPAL ---
@@ -887,7 +937,8 @@ void iniciarTesteManual() {
         DadosRecebidos dados = recebeDados(false, false);
         float valoresLidos[] = {dados.conv04, dados.conv05, dados.conv0A, dados.conv0B, dados.conv0C, dados.conv0D};
 
-        valoresEnviados[0] = valoresEnviados[0] * 0.7; // APAGAR (forçando erro para validar se o texto fica vermelho no teste manual)
+        //valoresEnviados[0] = valoresEnviados[0] * 0.7; // APAGAR (forçando erro para validar se o texto fica vermelho no teste manual)
+        
         // --- LÓGICA DE ATUALIZAÇÃO INCREMENTAL ---
         for (int i = 0; i < 6; i++) {
             // Calcula a posição do gauge
@@ -902,7 +953,7 @@ void iniciarTesteManual() {
             else erro = (abs(valoresLidos[i]) > 0.01) ? 1.0 : 0.0;
             uint16_t corDoValor = (erro > 0.1) ? VERMELHO : VERDE;
 
-            // 1. Atualiza o texto (isso já é anti-flicker)
+            // 1. Atualiza o texto (anti-flicker)
             atualizaValorTexto(centroX, centroY, valoresLidos[i], corDoValor, (i == 4));
 
             // 2. Lógica incremental para o anel
@@ -952,8 +1003,6 @@ void setup() {
   
   estadoAtual = TELA_BLUETOOTH;
   mostrarTelaBluetooth();
-  // estadoAtual = TELA_TESTE_MANUAL;
-  // mostrarTelaTesteManual();
 }
 
 void loop() {

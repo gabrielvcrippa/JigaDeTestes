@@ -48,6 +48,7 @@ BluetoothSerial SerialBT;
 #define PIDS_PER_TABLE 5
 #define trigPin 5
 #define intervaloCapturaDado 250
+const int Tx_pin_to_Arduino = 17;
 
 // --- ESTRUTURAS E ESTADOS GLOBAIS ---
 enum ScreenState { TELA_BLUETOOTH, TELA_MENU_TESTES, TELA_TESTE_AUTO, TELA_TESTE_MANUAL, TELA_RELATORIO };
@@ -125,7 +126,7 @@ void mostrarTelaTesteManual();
 void mostrarTelaRelatorio();
 void desenhaListaErros();
 void desenhaPaginacaoRelatorio();
-void desenhaRingGauge(int x, int y, int r, const char* rotulo, float valor, float minVal, float maxVal, bool isRpm);
+void desenhaRingGauge(int x, int y, int r, const char* rotulo, float valor, float minVal, float maxVal, bool isRpm, uint16_t corValor);
 void desenhaPaginacaoRelatorio();
 void drawThickArc(int x, int y, int r, int thickness, int start_angle, int sweep_angle, uint16_t color); // <-- ADICIONE ESTA LINHA
 
@@ -178,42 +179,24 @@ void drawThickArc(int x, int y, int r, int thickness, int start_angle, int sweep
   }
 }
 
-// Assinatura da função atualizada para incluir os novos parâmetros
-void desenhaRingGauge(int x, int y, int r, const char* rotulo, float valor, float minVal, float maxVal, bool isRpm) {
-  
-  // 1. Desenha o anel de fundo cinza
+void desenhaRingGauge(int x, int y, int r, const char* rotulo, float valor, float minVal, float maxVal) {
+  // 1. Desenha o anel de contorno cinza
   tft.drawCircle(x, y, r, CINZA_CLARO);
   tft.drawCircle(x, y, r - 1, CINZA_CLARO);
   tft.drawCircle(x, y, r - 2, CINZA_CLARO);
+  
+  // Limpa a área do anel com a cor de fundo
+  drawThickArc(x, y, r, 3, 0, 360, CINZA_CLARO);
 
-  // 2. Mapeia o valor atual para um ângulo de 0-360 graus e desenha o arco
-  // A função map() lida corretamente com faixas que não começam em zero
+  // 2. Desenha o arco inicial
   int sweepAngle = map(valor, minVal, maxVal, 0, 360);
-  int startAngle = 0;
-  int thickness = 3;
-  drawThickArc(x, y, r, thickness, startAngle, sweepAngle, LARANJA);
-
-  // 3. Escreve o rótulo
+  drawThickArc(x, y, r, 3, 0, sweepAngle, LARANJA);
+  
+  // 3. Escreve o rótulo (que não muda)
   tft.setFreeFont(FSS9); 
   tft.setTextColor(TFT_WHITE);
   tft.setTextDatum(BC_DATUM); 
-  tft.drawString(rotulo, x, y - r - 5); 
-
-  // 4. Formata e escreve o valor numérico com base no tipo de PID
-  char valorStr[7]; // Buffer para até 6 caracteres + terminador
-  
-  if (isRpm) {
-    // Se for RPM, formata com 5 dígitos
-    sprintf(valorStr, "%05.0f", valor);
-  } else {
-    // Para os outros, formata com 3 dígitos
-    sprintf(valorStr, "%03.0f", valor);
-  }
-
-  tft.setFreeFont(FSSB12); 
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextDatum(CC_DATUM); 
-  tft.drawString(valorStr, x, y);
+  tft.drawString(rotulo, x, y - r - 5);
 }
 
 void desenhaPaginacao() {
@@ -306,7 +289,6 @@ void mostrarTelaMenuTestes() {
 void desenhaMenuBarTeste() {
   tft.fillRect(0, 0, SCREEN_WIDTH, MENUBAR_HEIGHT, LARANJA);
   tft.fillTriangle(10, MENUBAR_HEIGHT / 2, 30, 10, 30, MENUBAR_HEIGHT - 10, TFT_BLACK);
-  // A lógica de desenhar o ícone de pausa/play foi removida.
 }
 
 void desenhaMenuBarRelatorio() {
@@ -447,6 +429,56 @@ void atualizaValoresTabelas(const DadosRecebidos& dados, const float erros[]) {
   tft.setFreeFont(nullptr); 
 }
 
+void atualizaValorTexto(int x, int y, float valor, uint16_t cor, bool isRpm) {
+  char valorStr[7];
+  if (isRpm) {
+    sprintf(valorStr, "%05.0f", valor);
+  } else {
+    sprintf(valorStr, "%03.0f", valor);
+  }
+
+  tft.setFreeFont(FSSB12);
+  tft.setTextColor(cor, CINZA_ESCURO); // Define a cor do texto e do fundo
+  tft.setTextDatum(CC_DATUM);
+
+  // Apaga a área antiga desenhando um retângulo com a cor de fundo
+  tft.fillRect(x - 35, y - 10, 70, 20, CINZA_ESCURO);
+  
+  // Desenha o novo valor na área limpa
+  tft.drawString(valorStr, x, y);
+}
+
+void atualizaRingGauges(const DadosRecebidos& dados) {
+    // Parâmetros dos gauges (os mesmos da função mostrarTelaTesteManual)
+    int numLinhas = 2;
+    int numColunas = 3;
+    int larguraColuna = SCREEN_WIDTH / numColunas;
+    int yOffset = 15;
+    int alturaLinha = (SCREEN_HEIGHT - MENUBAR_HEIGHT - yOffset) / numLinhas;
+    int raioGauge = 40;
+
+    // Rótulos e faixas de valores para cada PID
+    const char* pidLabels[] = { "Carga do Motor", "Temp. Arref.", "Press. Combustivel", "Press. Coletor", "RPM", "Velocidade" };
+    float minValues[] = {0, -40, 0, 0, 0, 0};
+    float maxValues[] = {100, 215, 765, 255, 16384, 255};
+
+    // Array com os valores recebidos do ELM327
+    float pidValues[] = { dados.conv04, dados.conv05, dados.conv0A, dados.conv0B, dados.conv0C, dados.conv0D };
+
+    for (int i = 0; i < numLinhas; i++) {
+        for (int j = 0; j < numColunas; j++) {
+            int pidIndex = i * numColunas + j;
+            int centroX = (j * larguraColuna) + (larguraColuna / 2);
+            int centroY = MENUBAR_HEIGHT + yOffset + (i * alturaLinha) + (alturaLinha / 2);
+
+            // Redesenha o gauge com o novo valor
+            desenhaRingGauge(centroX, centroY, raioGauge, pidLabels[pidIndex],
+                 pidValues[pidIndex], minValues[pidIndex], maxValues[pidIndex],
+                 (pidIndex == 4), TFT_WHITE);
+        }
+    }
+}
+
 void mostrarTelaTesteAuto() {
   tft.fillScreen(CINZA_ESCURO);
   desenhaMenuBarTeste();
@@ -496,7 +528,7 @@ void mostrarTelaTesteManual() {
         "Carga do Motor", "Temp. Arref.", "Press. Combustivel",
         "Press. Coletor", "RPM", "Velocidade"
     };
-    float pidValues[] = {40, -10, 300, 200, 10000, 100};
+    float pidValues[] = {0, -40, 0, 0, 0, 0};
     float minValues[] = {0, -40, 0, 0, 0, 0};
     float maxValues[] = {100, 215, 765, 255, 16384, 255};
     // ---------------------------------------------
@@ -510,8 +542,8 @@ void mostrarTelaTesteManual() {
             
             // Passa todos os parâmetros necessários para a função de desenho
             desenhaRingGauge(centroX, centroY, raioGauge, pidLabels[pidIndex], 
-                             pidValues[pidIndex], minValues[pidIndex], maxValues[pidIndex], 
-                             (pidIndex == 4)); // O 5º PID (índice 4) é o RPM
+                 pidValues[pidIndex], minValues[pidIndex], maxValues[pidIndex], 
+                 (pidIndex == 4), TFT_WHITE); // Passa a cor padrão
         }
     }
 }
@@ -676,12 +708,13 @@ void conectarDispositivoSelecionado() {
 }
 
 void finalizarTeste() {
-    digitalWrite(trigPin, LOW); 
-    dataIndex = 0;
-    totalError = 0;
-    testIsPaused = false;
-    estadoAtual = TELA_MENU_TESTES;
-    mostrarTelaMenuTestes();
+  Serial2.print("0,0,0,0,0,0,0\n");
+  digitalWrite(trigPin, LOW); 
+  dataIndex = 0;
+  totalError = 0;
+  testIsPaused = false;
+  estadoAtual = TELA_MENU_TESTES;
+  mostrarTelaMenuTestes();
 }
 
 void handleTouch_TelaBluetooth(uint16_t x, uint16_t y) {
@@ -799,22 +832,94 @@ void iniciarTesteAutomatico() {
 
 void iniciarTesteManual() {
     estadoAtual = TELA_TESTE_MANUAL;
-    mostrarTelaTesteManual(); // Desenha a nova interface uma vez
+    
+    // Array para guardar o ângulo anterior de cada medidor.
+    // 'static' faz com que os valores sejam preservados entre as chamadas do loop.
+    static int angulosAnteriores[6] = {0,0,0,0,0,0};
 
-    // O loop while agora pode ser usado no futuro para atualizar os valores dos gauges
-    // Por enquanto, ele apenas mantém a tela ativa.
+    // --- PARÂMETROS E DESENHO INICIAL ---
+    tft.fillScreen(CINZA_ESCURO);
+    desenhaMenuBarTeste();
+
+    const char* pidLabels[] = {"Carga do Motor", "Temp. Arref.", "Press. Combustivel", "Press. Coletor", "RPM", "Velocidade"};
+    float minValues[] = {0, -40, 0, 0, 0, 0};
+    float maxValues[] = {100, 215, 765, 255, 16384, 255};
+    int numColunas = 3;
+    int larguraColuna = SCREEN_WIDTH / numColunas;
+    int yOffset = 15;
+    int alturaLinha = (SCREEN_HEIGHT - MENUBAR_HEIGHT - yOffset) / 2;
+    int raioGauge = 40;
+
+    for (int i = 0; i < 6; i++) {
+        int linha = i / numColunas;
+        int coluna = i % numColunas;
+        int centroX = (coluna * larguraColuna) + (larguraColuna / 2);
+        int centroY = MENUBAR_HEIGHT + yOffset + (linha * alturaLinha) + (alturaLinha / 2);
+        
+        // Desenha o gauge estático (fundo, rótulo e valor inicial em 0)
+        desenhaRingGauge(centroX, centroY, raioGauge, pidLabels[i], 0, minValues[i], maxValues[i]);
+        atualizaValorTexto(centroX, centroY, 0, TFT_WHITE, (i == 4));
+        angulosAnteriores[i] = 0; // Reseta o estado
+    }
+
+    // --- LOOP DE ATUALIZAÇÃO PRINCIPAL ---
     while(estadoAtual == TELA_TESTE_MANUAL){
-        uint16_t tx,ty;
+        uint16_t tx, ty;
         if(tft.getTouch(&tx,&ty)){
             handleTouch_TelaTesteManual(tx,ty);
             while(tft.getTouch(&tx,&ty)){}
         }
-        
-        // No futuro, a lógica de "recebeDados" e atualização da tela virá aqui
-        // Ex: DadosRecebidos dados = recebeDados(false, false);
-        //     atualizaRingGauges(dados);
 
-        delay(50); // Pequeno delay para não sobrecarregar o processador
+        if (estadoAtual != TELA_TESTE_MANUAL) {
+            break;
+        }
+
+        // Leitura de dados (semelhante a antes)
+        float valoresEnviados[6];
+        valoresEnviados[0] = map(analogRead(pinAdc1), 0, 4095, 0, 100);
+        valoresEnviados[1] = map(analogRead(pinAdc2), 0, 4095, -40, 215);
+        valoresEnviados[2] = map(analogRead(pinAdc3), 0, 4095, 0, 765);
+        valoresEnviados[3] = map(analogRead(pinAdc4), 0, 4095, 0, 255);
+        valoresEnviados[4] = map(analogRead(pinAdc5), 0, 4095, 0, 16383);
+        valoresEnviados[5] = map(analogRead(pinAdc6), 0, 4095, 0, 255);
+        String commandToArduino = "1," + String((int)valoresEnviados[0]) + "," + String((int)valoresEnviados[1]) + "," + String((int)valoresEnviados[2]) + "," + String((int)valoresEnviados[3]) + "," + String((int)valoresEnviados[4]) + "," + String((int)valoresEnviados[5]) + "\n";
+        Serial2.print(commandToArduino);
+        DadosRecebidos dados = recebeDados(false, false);
+        float valoresLidos[] = {dados.conv04, dados.conv05, dados.conv0A, dados.conv0B, dados.conv0C, dados.conv0D};
+
+        valoresEnviados[0] = valoresEnviados[0] * 0.7; // APAGAR (forçando erro para validar se o texto fica vermelho no teste manual)
+        // --- LÓGICA DE ATUALIZAÇÃO INCREMENTAL ---
+        for (int i = 0; i < 6; i++) {
+            // Calcula a posição do gauge
+            int linha = i / numColunas;
+            int coluna = i % numColunas;
+            int centroX = (coluna * larguraColuna) + (larguraColuna / 2);
+            int centroY = MENUBAR_HEIGHT + yOffset + (linha * alturaLinha) + (alturaLinha / 2);
+
+            // Calcula erro e cor do texto
+            float erro = 0;
+            if (abs(valoresEnviados[i]) > 0.01) erro = abs((valoresLidos[i] - valoresEnviados[i]) / valoresEnviados[i]);
+            else erro = (abs(valoresLidos[i]) > 0.01) ? 1.0 : 0.0;
+            uint16_t corDoValor = (erro > 0.1) ? VERMELHO : VERDE;
+
+            // 1. Atualiza o texto (isso já é anti-flicker)
+            atualizaValorTexto(centroX, centroY, valoresLidos[i], corDoValor, (i == 4));
+
+            // 2. Lógica incremental para o anel
+            int anguloNovo = map(valoresLidos[i], minValues[i], maxValues[i], 0, 360);
+            if (anguloNovo > angulosAnteriores[i]) {
+                // Valor aumentou: desenha apenas o novo segmento em laranja
+                drawThickArc(centroX, centroY, raioGauge, 3, angulosAnteriores[i], anguloNovo - angulosAnteriores[i], LARANJA);
+            } else if (anguloNovo < angulosAnteriores[i]) {
+                // Valor diminuiu: apaga o segmento antigo com a cor de fundo
+                drawThickArc(centroX, centroY, raioGauge, 3, anguloNovo, angulosAnteriores[i] - anguloNovo, CINZA_CLARO);
+            }
+            // Se o ângulo for igual, não faz nada no anel.
+
+            // 3. Guarda o ângulo atual para a próxima iteração
+            angulosAnteriores[i] = anguloNovo;
+        }
+        delay(50); // Reduzimos o delay para uma resposta mais fluida
     }
 }
 
@@ -824,6 +929,7 @@ void iniciarTesteManual() {
 // ===================================================================================
 void setup() {
   Serial.begin(115200);
+  Serial2.begin(115200, SERIAL_8N1, -1, Tx_pin_to_Arduino);
   tft.init();
   tft.setRotation(3);
 

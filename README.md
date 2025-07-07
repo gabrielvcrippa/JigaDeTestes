@@ -19,9 +19,10 @@ O ESP32 é o componente central do projeto, responsável por toda a lógica de c
 
 * **Gerenciamento da Interface Gráfica (UI):** Controla todas as telas do sistema no display TFT, incluindo a conexão Bluetooth, menu de seleção, telas de teste e relatórios.
 * **Comunicação Bluetooth:** Gerencia a busca, seleção e conexão com o scanner ELM327, enviando requisições de PIDs e recebendo as respostas.
-* **Modos de Operação:** Coordena duas rotinas de teste distintas: manual e automatizada.
-* **Rotina Automatizada:** Compara os dados recebidos do scanner com um conjunto de valores pré-definidos (gabarito) e, ao final, gera um relatório detalhado de erros.
-* **Rotina Manual:** Permite ao usuário controlar em tempo real os valores de 6 PIDs principais através de potenciômetros.
+* **Modos de Operação:** Coordena três rotinas de teste distintas: manual, automatizada e simulação.
+* **Modo Automatizado:** Compara os dados recebidos do scanner com um conjunto de valores pré-definidos (gabarito) e, ao final, gera um relatório detalhado de erros.
+* **Modo Manual:** Permite ao usuário controlar em tempo real os valores de 6 PIDs através de potenciômetros. Neste modo, o ESP32 permanece conectado ao ELM327 para receber os dados de volta, compará-los com os valores enviados e exibir o resultado com um feedback de erro (verde/vermelho) na tela. O objetivo é validar todo o ciclo de comunicação da jiga.
+* **Modo Simulação:** Permite ao usuário controlar em tempo real os valores de 6 PIDs através de potenciômetros. Neste modo, o Bluetooth do ESP32 permanece inativo e não se conecta ao ELM327. A tela da jiga serve apenas como um "painel de controle", mostrando os valores que estão sendo enviados ao Arduino, para que um dispositivo externo (como um celular) possa se conectar ao ELM327 e ser testado.
 * **Comunicação Serial com Arduino:** No modo manual, o ESP32 envia os valores lidos dos potenciômetros para o Arduino via comunicação Serial (`Serial2`) para que a ECU simulada utilize esses dados.
 
 ### 2. Arduino - Simulador de ECU
@@ -29,9 +30,10 @@ O ESP32 é o componente central do projeto, responsável por toda a lógica de c
 O firmware do Arduino tem a única função de atuar como um simulador de ECU. Ele está conectado ao barramento CAN e é responsável por:
 
 * **Geração de Dados CAN:** Criar e enviar mensagens no padrão CAN contendo as respostas para as solicitações de PIDs do OBD-II.
-* **Operação Bimodal:** Ele pode operar de duas formas:
+* **Operação:** Ele pode operar de três formas:
     * **Modo Automático:** Percorre um conjunto de dados pré-programados, alterando os valores dos PIDs em um ciclo definido.
     * **Modo Manual:** Recebe comandos do ESP32 via Serial e utiliza os valores fornecidos para gerar as respostas CAN, permitindo o controle em tempo real.
+    * **Modo Simulador:** Atua de forma idêntica ao Modo Manual, recebendo comandos do ESP32 via Serial e gerando as respostas CAN. A diferença é que o destinatário final da informação (após passar pelo ELM327) é um aplicativo de scanner externo, e não a própria jiga.
 
 ### 3. Biblioteca TFT_eSPI (Modificada)
 
